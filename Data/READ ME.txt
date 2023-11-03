@@ -1,0 +1,17 @@
+algues : (cell/mL)
+algues_species : (cell/mL)
+BBE : (µg/L)
+CNP : (% of mass)
+cyto : (cell/µL)
+DOC : (series: 2 measures), (conservation: =1 ok =0 bad), (mg/L)
+ecoplate : absorbance (A1=blank, already removed)
+fish : (g)
+geris : presence or absence of geris
+multipar : deapth (m), ODO (mg/L), chlorophyll (µg/L)
+nutrients : (µg/L)
+secchi : deapth wherer the disc is not visible
+sediment : (g)
+seston_dry : (mg)
+treatment
+zoo : number of individus in  24 L
+zoo_dry : (mg)
