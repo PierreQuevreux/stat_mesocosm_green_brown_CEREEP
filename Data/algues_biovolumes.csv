@@ -1,0 +1,42 @@
+species;cell length µm;cell width µm;cell thickness µm;cell biovolume µm3;reference;comment
+Chlamydomonas ;13.25;11.75;11.75;1508.68;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Crucigeniella ;9;4.2;4.2;80.51;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Dictyosphaerium ;4.94;4.51;4.51;81.19;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Dictyosphaerium subsolitarium;2.2;2.2;2.2;5.57;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Kirchneriella ;14.35;3.7;3.7;192.3;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+cf. Neochloris;4;4;4;31.51;de Jaeger et al 2018 PLoS ONE 13 (4) - e0194834;
+Oocystis ;13.77;8.35;8.35;165.73;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Oocystis cf. marssonii;16;9;9;678.24;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Oocystis cf. parva;7;3;3;32.97;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Pediastrum boryanum;8;6;4;40.19;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Pediastrum tetras;20;20;5;418.67;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Scenedesmus (2 cells);13.67;4.67;4.67;158.4;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;Mean size of the Scenedesmus taxa in the experiment 
+Scenedesmus ecornis var. concavus;14;5;5;183.17;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Scenedesmus gr. Abundantes/ Spinosi;14;5;5;183.17;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Scenedesmus gr. Acutodesmus;13;4;4;108.85;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;Synonyme Scenedesmus acutus var. acutus (Code Sandre)
+Tetraedron minimum;20;20;10;1256;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+"Tetraedron minimum ""Kivu form""";20;20;10;1256;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Tetraedron triangulare;9;9;9;381.51;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Cosmarium inconspicuum;14;12.5;7;741.41;;Estimated on the basis of length and width found on the web and supposing similar L:l:h ratios as other Cosmarium species
+Cosmarium laeve;25;17;10;2224.17;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Mallomonas ;26.67;11.46;11.46;2136.63;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Ochromonas ;11.81;8;8;957.99;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Synura ;9;9;9;381.51;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Undetermined Chrysophycae;15.83;9.49;9.49;1158.71;;Mean size of the species of Chrysophyceae in the experiment 
+Chrysophycae kyst;17.87;17.87;17.87;4723.52;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Trachydiscus sexangulatus;8.57;6.8;6.8;207.49;;Estimation of size n the basis of drawing of T. sexangulatus by Ettl (1978)
+Achnanthidium;15;3.5;3;132.3;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Fragilaria ;59.54;4.65;3.33;965.66;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Cryptomonas ;29.25;12.25;9.81;2131.99;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Plagioselmis nannoplanctica;9;4.7;4;88.55;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Gymnodinium ;24.66;21.92;17.05;8734.64;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Peridiniopsis cf. penadiforme;30;29;20;6374.2;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Peridinien;31.63;26.13;22.47;12810.11;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;Mean size of Peridiniaceaee
+Aphanocapsa ;2;2;2;7.62;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Aphanothece ;2.94;1.22;1.22;3.4;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Chroococcus ;7.81;7.31;7.31;685.26;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Cyanogranis ferruginea;1.5;1;0.6;1;;Estimation (very small cyanobacteria)
+Cyanogranis libera;1;0.7;0.4;0.5;;Estimation (very small cyanobacteria)
+Merismopedia tenuissima;1;1;1;0.52;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+Pseudanabaena;5.16;1.8;1.8;12.72;Rimet & Druart 2018 Ann LImnol� - Int J Limnol;
+undetermined flagellate;20;15;15;2356;;Common size of a flagellate
