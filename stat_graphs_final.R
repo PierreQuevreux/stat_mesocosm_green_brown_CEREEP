@@ -20,7 +20,7 @@ sessionInfo()
 # htmltools_0.5.6.1    R6_2.5.1             leaps_3.1            arm_1.13-1           Rcpp_1.0.11         
 # coda_0.19-4          mgcv_1.8-42          zoo_1.8-12           pkgconfig_2.0.3     
 # Graph packages
-library(ggplot2)
+library(ggplot2) #
 library(cowplot)
 library(gridExtra)
 library(scales)
@@ -36,21 +36,21 @@ library(tibble)
 library(lme4) # mixed models
 library(nlme) # random effects
 library(MASS) # for quasi-Poisson mixed model
-library(lmerTest)
+#library(lmerTest)
 library(car) # Anova function (type II anova)
-library(emmeans) # for post hoc Tukey tests with lmer
-library(multcomp) # to dispay the results of the Tukey test
+library(emmeans) # for post-hoc Tukey tests
+library(lsmeans) # for post-hoc Tukey tests with lmer
+library(multcomp) # to display the results of the Tukey test
 library(blmeco) # to test the dispersion of Poisson distribution
 library(Rmisc)
-library(pscl)
-library(lsmeans) # for post hoc Tukey tests with lmer
-library(lmerTest)
+#library(pscl)
+#library(lmerTest)
 library(multcompView)
 library(FactoMineR) # PCA analysis
 library(factoextra) # to represent eigen values of PCA
-library(vegan)
+library(vegan) # for PERMANOVA
 # Miscellaneous packages
-library(lubridate)
+library(lubridate) # date format
 library(rstudioapi) # to set the working directory
 
 setwd(dirname(getActiveDocumentContext()$path)) # Set working directory to source file location
@@ -60,7 +60,10 @@ path_data="Data/"
 ### PLOT OPTIONS ### ----
 ### colour scales ###
 colour_OM<-scale_fill_manual(values=c("lightgray","dimgray"))
-colour_light<-scale_colour_manual(values=c("black","dimgray"))
+colour_light<-scale_color_manual(values=c("darkcyan","gold"))
+fill_light<-scale_fill_manual(values=c("darkcyan","gold"))
+colour_fish_treatment<-scale_color_manual(values=c("cadetblue","orangered"))
+fill_fish_treatment<-scale_fill_manual(values=c("cadetblue","orangered"))
 colour_chloro<-scale_fill_manual(values=c("green1","green4"))
 colour_zoo<-scale_fill_manual(values=c("darkorange1","darkorange4"))
 colour_fish<-scale_fill_manual(values=c("red","darkred"))
@@ -90,7 +93,7 @@ y_axis_log10<-scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
                             labels = scales::trans_format("log10", scales::math_format(10^.x)))
 
 ### labels ###
-label_algae<-expression("Concentration (cell mL"^-1*")")
+label_algae<-expression("Biovolume ("*mm^3*" "*L^{-1}*")")
 label_chloro<-expression("Chlorophyll "*italic(a)*" (\u03BCg L"^{-1}*")")
 label_zoo<-"Individuals per 24 L"
 label_OD<-"Optical density (OD)"
@@ -182,6 +185,8 @@ Sys.setlocale("LC_TIME", "English")
 
 # Phytoplankton taxa abundance (for PCA analysis, microscope identification data) #
 phyto<-read.table(paste0(path_data,"algues_species.csv"),sep=';',header=T)
+phyto_bv<-read.table(paste0(path_data,"algues_biovolumes.csv"),sep=';',header=T)
+phyto_bv<-merge(phyto_bv[,c("species","cell.biovolume.µm3")],phyto,by="species")
 ### per species #
 phyto_1<-t(as.matrix(phyto[,c(2,6:ncol(phyto))]))
 temp<-phyto_1[1,1:(ncol(phyto_1)-1)]
@@ -202,6 +207,15 @@ phyto_2<-phyto_2 %>% mutate_at(1:ncol(phyto_2), as.numeric)
 phyto_2$mesocosm<-c(1:36)
 phyto_2$mesocosm<-as.factor(phyto_2$mesocosm)
 phyto_2<-merge(treatment,phyto_2,by="mesocosm")
+### biovolume aggregated per family #
+phyto_bv<-melt(phyto_bv, id.vars = c("family_old","species","family_1","family_2","mixotrophic","cell.biovolume.µm3"),
+              variable.name = "mesocosm", 
+              value.name = "concentration")
+phyto_bv$concentration<-phyto_bv$concentration*phyto_bv$cell.biovolume.µm3
+levels(phyto_bv$mesocosm)<-c(1:36)
+phyto_bv<-merge(treatment,phyto_bv,by="mesocosm")
+phyto_bv$family_1<-as.factor(phyto_bv$family_1)
+phyto_bv$concentration=phyto_bv$concentration*1e-9*1e3 # conversion to mm3 L-1
 
 # Shannon-Weaver diversity
 diversity<-read.table(paste0(path_data,"algues_diversity.csv"),sep=';',header=T)
@@ -316,7 +330,7 @@ stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$chloro=get_stat_table(stat)
 
 # Tukey test
-model<-lmer(data=BBE[BBE$taxon_BBE=="green_algae",], log(BBE)~fish*light+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
+model<-lmer(data=data, log(BBE)~fish*light+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
 summary(model) # to get the quantitative effect of significant treatments
 tukey<-emmeans(model, specs = pairwise~fish:light)
 tukey<-cld(tukey$emmeans,
@@ -368,31 +382,35 @@ p1<-ggplot(data=zoodry)+
 graph_list$zoo=p1
 
 # Fish growth # ----
-model<-lm(data=fish,growth~light*OM)
+# fish growth is modeled as an exponential function of time: growth_rate = [ln(mass_max)-ln(mass_min)]/time
+mean(fish$initial_mass)
+sd(fish$initial_mass)
+fish$growth_rate<-(log(fish$final_mass)-log(fish$initial_mass))/fish$duration
+
+model<-lm(data=fish,growth_rate~light*OM+species)
 par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
-stat<-stat[1:3,c("F value","Df","Pr(>F)")]
+stat<-stat[c(1,2,4),c("F value","Df","Pr(>F)")]
 stat_list$fish=get_stat_table(stat)
 
 # Tukey test
-model<-lm(data=fish, growth~light)
+model<-lm(data=fish, growth_rate~light)
 summary(model) # to get the quantitative effect of significant treatments
 tukey<-emmeans(model, specs = ~light)
 tukey<-cld(tukey,
            alpha=0.05,
            Letters=letters)
-tukey$x=c(1,2)
-tukey$y=c(0.012,0.02)
+tukey$y=c(0.0015,0.003)
 
 p1<-ggplot(data=fish)+
-  geom_boxplot(aes(light,growth,fill=OM),position="dodge")+
-  geom_text(data=tukey,aes(x,y+0.002,label=.group),size=7,fontface = "bold")+
+  geom_boxplot(aes(light,growth_rate,fill=OM),position="dodge")+
+  geom_text(data=tukey,aes(light,y,label=.group),size=7,fontface = "bold")+
   colour_fish+
   theme+theme(legend.position=c(0.12,0.9),
               legend.background=element_blank(),
               legend.box.background=element_rect(colour="black",fill="white"))+
-  ylab(expression("Fish growth (g "*day^{-1}*")"))
+  ylab(expression("Fish relative growth rate (day"^{-1}*")"))
 
 # displays significant effects on the graph
 label<-data.frame(label="light **",x=1,y=1)
@@ -483,7 +501,7 @@ p1<-ggplot(data=data)+
   theme+theme(legend.position=c(0.12,0.9),
               legend.background=element_blank(),
               legend.box.background=element_rect(colour="black",fill="white"))+
-  ylab(expression("Bacteria (cell µL"^{-1}*")"))
+  ylab(expression("Heterotrophic prokaryotes (cell µL"^{-1}*")"))
 
 # displays significant effects on the graph
 label<-data.frame(label="fish **",x=1,y=1)
@@ -497,7 +515,7 @@ graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
 
 graph_list$bacteria=graph
 
-# Heterotroph # ----
+# Heterotrophic protists # ----
 model<-glmer(hetero~fish*light*OM+(1|mesocosm)+(1|sample_date), offset=log(volume_hetero),family=poisson,data=cyto_count)
 plot(model)
 qqnorm(resid(model))
@@ -530,7 +548,7 @@ p1<-ggplot(data=databis)+
   theme+theme(legend.position=c(0.12,0.9),
               legend.background=element_blank(),
               legend.box.background=element_rect(colour="black",fill="white"))+
-  ylab(expression("Heterotroph (cell µL"^{-1}*")"))+
+  ylab(expression("Heterotrophic protists (cell µL"^{-1}*")"))+
   ylim(15,100)
 
 # displays significant effects on the graph
@@ -609,82 +627,196 @@ graph<-ggdraw(xlim = c(0, 3), ylim = c(0, 3)) +
                   c(2,3,3,3,2,1,1), size = 30)
 ggsave(paste(path_figures,"figure_food_web.pdf",sep=""), graph, width = 18, height = 16, device=cairo_pdf)
 
-# Export stat table # ----
-stat_table<-NULL
-names_data<-c("Chlorophyll","Zooplankton","Fish growth","Sediments","Bacteria","Heterotrophs","DOC")
-for(i in 1:length(stat_list)){
-  data<-as.data.frame(stat_list[[i]])
-  data<-rownames_to_column(data,"row_names")
-  data<-cbind(Variable=c("",names_data[i],""),data)
-  stat_table<-bind_rows(stat_table,data)
-}
-write.table(stat_table,paste0(path_figures,"stat_foodweb.csv"),row.names=FALSE)
-### FUNCTIONAL RESPONSE OF COMPARTMENTS # ----
-# PERMANOVA phytoplankton # ----
-### per species #
-data<-phyto_1[,c((ncol(treatment)+1):ncol(phyto_1))]
-adonis2(data ~ fish*light*OM, data=phyto_1, permutations = 10000, method="bray")
+# DOC chlorophyll correlation # ----
+data<-DOC[,c("date","mesocosm","DOC")]
+data$date<-as.factor(data$date)
+levels(data$date)<-c("20/07/15","04/08/15","18/08/15","01/09/15","24/09/15","21/10/15","09/11/15")
+data<-merge(data,BBE[BBE$taxon_BBE=="green_algae" & BBE$date%in%levels(data$date),c("mesocosm","BBE","OM","fish","light","date")],by=c("mesocosm","date"))
 
-### aggregated per family #
-data<-phyto_2[,c((ncol(treatment)+1):ncol(phyto_2))]
-data$none<-NULL
-adonis2(data ~ fish*light*OM, data=phyto_2, permutations = 10000, method="bray")
-
-# PCA phytoplankton # ----
-### per species #
-data<-phyto_1[,c((ncol(treatment)+1):ncol(phyto_1))]
-data_pca<-PCA(data, scale.unit = TRUE, ncp = 5, graph = TRUE)
-data_pca$eig
-
-fviz_eig(data_pca, addlabels = TRUE) +
-  theme+theme(plot.title=element_blank())
-
-fviz_pca_biplot(data_pca,
-                label = "var") +
-  geom_point(aes(shape=factor(phyto_1$light),
-                 colour=factor(phyto_1$fish)),size=3) +
-  scale_color_manual(values=c("black","red"))+
-  scale_size_manual(values=c(2,4))+
-  theme+theme(axis.title.x = element_text())+
-  ggtitle("PCA phytoplakton per species")
-
-### aggregated per family #
-data<-phyto_2[,c((ncol(treatment)+1):ncol(phyto_2))]
-data$none<-NULL
-data_pca<-PCA(data, scale.unit = TRUE, ncp = 5, graph = TRUE)
-data_pca$eig
-
-fviz_eig(data_pca, addlabels = TRUE) +
-  theme+theme(plot.title=element_blank())
-
-p1<-fviz_pca_biplot(data_pca,
-                label = "var",
-                col.var ="black") +
-  geom_point(aes(shape=factor(phyto_2$light),
-                 colour=factor(phyto_2$fish)),size=3) +
+ggplot(data=data,aes(BBE,DOC,colour=fish,fill=fish))+
+  geom_point()+
+  geom_smooth(method="lm")+
   scale_color_manual(values=c("cadetblue","orangered"))+
-  scale_size_manual(values=c(2,4))+
-  theme+theme(axis.title.x = element_text(),
-              legend.box="horizontal",
-              legend.position=c(0.75,0.92),
-              legend.background=element_blank(),
-              legend.box.background=element_rect(colour="black",fill="white"))+
-  ggtitle("PCA phytoplakton")
+  scale_fill_manual(values=c("cadetblue","orangered"))+
+  theme+theme(axis.text.x=element_text(),
+              axis.title.x=element_text(),
+              axis.ticks.x=element_line())+
+  xlab(label_chloro)+
+  ylab(expression("DOC (mg "*L^{-1}*")"))
 
-label<-data.frame(label="fish *\nfish:light **",x=1,y=1)
+### FUNCTIONAL RESPONSE OF COMPARTMENTS # ----
+# Phytoplankton identification biovolume # ----
+data<-aggregate(concentration~family_1+mesocosm, data=phyto_bv, sum)
+data<-dcast(data=data,mesocosm~family_1,value.var="concentration")
+data<-data[,c(2:ncol(data),1)]
+data<-data %>% mutate_at(1:ncol(data), as.numeric)
+data$mesocosm<-c(1:36)
+data$mesocosm<-as.factor(data$mesocosm)
+data<-merge(treatment,data,by="mesocosm")
+data<-melt(data, id.vars = c("mesocosm","OM","light","fish","position","bloc","orientation","treatment"),
+           variable.name = "family_1", 
+           value.name = "concentration")
+data$family_1<-as.factor(data$family_1)
+data<-data[data$family_1!="none",]
+data$family_1<-droplevels(data$family_1)
+
+databis<-aggregate(data=data,concentration~family_1+treatment,FUN=mean)
+
+# Global abundance of the main taxa
+p1<-ggplot(data=databis)+
+  geom_bar(aes(treatment,concentration,fill=family_1),stat="identity")+
+  scale_fill_brewer(palette="Paired")+
+  theme+theme(axis.title.y=element_blank(),
+              axis.title.x=element_text())+
+  coord_flip()+
+  xlab("")+
+  ylab(label_algae)
+
+graph_list$phyto_taxa_bv=p1
+
+# extract taxa colours
+names<-levels(data$family_1)
+colours<-brewer.pal(length(names),"Paired")
+
+# Chlorophyceae
+model<-lm(data=data[data$family_1=="Chlorophyceae",],log(concentration)~fish*light*OM)
+par(mfrow=c(2,2))
+plot(model)
+stat<-Anova(model,type=2,test.statistic="F")
+stat<-stat[1:7,c("F value","Df","Pr(>F)")]
+stat_list$phyto_chlorophyceae_bv=get_stat_table(stat)
+
+p1<-ggplot(data=data[data$family_1=="Chlorophyceae",])+
+  geom_boxplot(aes(light,concentration,fill=OM))+
+  facet_wrap(~fish)+
+  colour_OM+
+  theme+theme(legend.position=c(0.13,0.87),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"),
+              plot.title=element_text(colour=colours[names=="Chlorophyceae"]))+
+  y_axis_log10+
+  ylab(label_algae)+
+  ggtitle("Chlorophyceae")
+
+# displays significant effects on the graph
+label<-data.frame(label="fish:light *",x=1,y=1)
 label<-ggplot(data=label)+
   geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
   theme_void()
 
 graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
   draw_plot(p1, 0, 0, 1, 1)+
-  draw_plot(label,0.5,0.15,0.5,0.2,hjust=0)
+  draw_plot(label,0.6,0.65,0.4,0.2,hjust=0)
 
-graph_list$PCA_phyto=graph
+graph_list$phyto_chlorophyceae_bv=graph
+
+# Dinophyceae
+model<-lm(data=data[data$family_1=="Dinophyceae",],log(concentration)~fish*light*OM)
+par(mfrow=c(2,2))
+plot(model)
+stat<-Anova(model,type=2,test.statistic="F")
+stat<-stat[1:7,c("F value","Df","Pr(>F)")]
+stat_list$phyto_dinophyceae_bv=get_stat_table(stat)
+
+# Tukey test
+model<-lm(data=data[data$family_1=="Dinophyceae",],log(concentration)~fish)
+tukey<-emmeans(model, specs = ~fish)
+tukey<-cld(tukey,
+           alpha=0.05,
+           Letters=letters)
+tukey$x=1.5
+tukey$xmin=0.5
+tukey$xmax=2.5
+tukey$y=c(10^0.5,10)
+tukey$.group<-as.factor(tukey$.group)
+levels(tukey$.group)<-c("a","b")
+
+p1<-ggplot(data=data[data$family_1=="Dinophyceae",])+
+  geom_boxplot(aes(light,concentration,fill=OM))+
+  geom_text(data=tukey,aes(x,y*1.4,label=.group),size=7,fontface = "bold")+
+  geom_errorbarh(data=tukey,aes(xmin=xmin,xmax=xmax,y=y),height=0.1)+
+  facet_wrap(~fish)+
+  colour_OM+
+  theme+theme(legend.position=c(0.12,0.13),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"),
+              plot.title=element_text(colour=colours[names=="Dinophyceae"]))+
+  y_axis_log10_short+
+  ylab(label_algae)+
+  ggtitle("Dinophyceae")
+
+# displays significant effects on the graph
+label<-data.frame(label="fish ***",x=1,y=1)
+label<-ggplot(data=label)+
+  geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
+  theme_void()
+
+graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
+  draw_plot(p1, 0, 0, 1, 1)+
+  draw_plot(label,0.7,0.65,0.3,0.2,hjust=0)
+
+graph_list$phyto_dinophyceae_bv=graph
+
+# Zygnematophyceae
+model<-lm(data=data[data$family_1=="Zygnematophyceae",],log(concentration)~fish*light*OM)
+par(mfrow=c(2,2))
+plot(model)
+stat<-Anova(model,type=2,test.statistic="F")
+stat<-stat[1:7,c("F value","Df","Pr(>F)")]
+stat_list$phyto_zygnematophyceae_bv=get_stat_table(stat)
+
+# Tukey test
+model<-lm(data=data[data$family_1=="Zygnematophyceae",],log(concentration)~fish*light)
+tukey<-emmeans(model, specs = pairwise~fish:light)
+tukey<-cld(tukey$emmeans,
+           alpha=0.05,
+           Letters=letters)
+tukey$y<-c(10^0.4,10^0.9,10^0.9,10^0.9)
+
+p1<-ggplot(data=data[data$family_1=="Zygnematophyceae",])+
+  geom_boxplot(aes(light,concentration,fill=OM))+
+  geom_text(data=tukey,aes(light,y,label=.group),size=7,fontface = "bold")+
+  facet_wrap(~fish)+
+  colour_OM+
+  theme+theme(legend.position=c(0.13,0.87),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"),
+              plot.title=element_text(colour=colours[names=="Zygnematophyceae"]))+
+  y_axis_log10+
+  ylab(label_algae)+
+  ggtitle("Zygnematophyceae")
+
+# displays significant effects on the graph
+label<-data.frame(label="fish *\nlight *\nfish:light *",x=1,y=1)
+label<-ggplot(data=label)+
+  geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
+  theme_void()
+
+graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
+  draw_plot(p1, 0, 0, 1, 1)+
+  draw_plot(label,0.6,0.15,0.4,0.25,hjust=0)
+
+graph_list$phyto_zygnematophyceae_bv=graph
+
+# final graph
+p1<-p1+theme(legend.position="right")
+legend<-get_legend(p1)
+
+graph<-ggdraw(xlim = c(0, 3), ylim = c(0, 2)) +
+  draw_plot(graph_list$phyto_taxa_bv, 0.1, 1, 1.9, 1)+
+  draw_plot(graph_list$phyto_chlorophyceae_bv, 0, 0, 1, 1)+
+  draw_plot(graph_list$phyto_dinophyceae_bv, 2, 0, 1, 1)+
+  draw_plot(graph_list$phyto_zygnematophyceae_bv, 1, 0, 1, 1)+
+  draw_plot(legend, 2.8, 0.95, 0.2, 0.2)+
+  draw_plot_label(c("A","B","C","D"), c(0,0,1,2), c(2,1,1,1), size = 30)
+ggsave(paste(path_figures,"supp_phytoplankton_family_bv.pdf",sep=""),graph, width = 20, height = 10, device = cairo_pdf)
 
 # PERMANOVA zooplankton # ----
 data<-zoo[,c(3:18)]
-adonis2(data ~ fish*light*OM, data=zoo, permutations = 1000, method="bray", strata=zoo$date)
+stat<-adonis2(data ~ fish*light*OM, data=zoo, permutations = 1000, method="bray", strata=zoo$date)
+stat<-stat[1:7,c("F","Df","Pr(>F)")]
+names(stat)<-c("F value","Df","Pr(>F)")
+stat_list$permanova_zoo=get_stat_table(stat)
 
 data_rel<-decostand(data, method = "total") # convert into relative abundances
 data_dist<-as.matrix(vegdist(data_rel, method = "bray")) # distance matrix
@@ -713,23 +845,37 @@ zoo$treatment<-as.factor(zoo$treatment)
 #data<-zoo[,c("cladocerae","copepode","rotifer")]
 data<-zoo[,c(3:11,13:14)]
 data<-zoo[,c("cladocerae","copepode","chaoborus","rotifer")]
+names(data)[1]<-"small\ncladoceran"
+names(data)[2]<-"copepode"
 data_pca<-PCA(data, scale.unit = TRUE, ncp = 5, graph = TRUE)
 data_pca$eig
 
-fviz_eig(data_pca, addlabels = TRUE) +
+# contributions of classes to eigen vectors
+table_PCA_zoo<-as.data.frame(data_pca$var$contrib)
+table_PCA_zoo<-round(table_PCA_zoo,1)
+table_PCA_zoo <- tibble::rownames_to_column(table_PCA_zoo, "VALUE")
+names(table_PCA_zoo)<-c("","Dim 1","Dim 2","Dim 3","Dim 4")
+write.table(table_PCA_zoo,paste0(path_figures,"table_PCA_zoo.csv"),row.names=FALSE)
+
+# Variance explained by each eigenvector
+p1<-fviz_eig(data_pca, addlabels = TRUE) +
   theme+theme(plot.title=element_blank())
 
+ggsave(paste0(path_figures,"supp_PCA_zoo.pdf"), p1, width = 7, height = 5, device=cairo_pdf)
+
+# PCA diagram
 p1<-fviz_pca_biplot(data_pca,
-                label = "var",
-                col.var ="black") +
+                    label = "var",
+                    col.var ="black",
+                    labelsize = 6) +
   geom_point(aes(colour=factor(zoo$fish)),size=3) +
-  scale_color_manual(values=c("cadetblue","orangered"))+
+  colour_fish_treatment+
   scale_size_manual(values=c(2,4))+
   theme+theme(axis.title.x = element_text(),
               legend.position=c(0.15,0.9),
               legend.background=element_blank(),
               legend.box.background=element_rect(colour="black",fill="white"))+
-  ggtitle("PCA zooplakton")
+  ggtitle("PCA zooplankton")
 
 label<-data.frame(label="fish ***",x=1,y=1)
 label<-ggplot(data=label)+
@@ -760,9 +906,9 @@ p1<-ggplot(data=data,aes(family, absorbance))+
   theme+theme(legend.title=element_blank(),
               axis.line = element_blank(),
               axis.text.x = element_text(vjust=0.5,size=15),
-              axis.text.y = element_blank(),
-              axis.ticks.y = element_blank(),
-              axis.title.y = element_blank(),
+              #axis.text.y = element_blank(),
+              #axis.ticks.y = element_blank(),
+              #axis.title.y = element_blank(),
               panel.grid.major = element_line(colour="black",linetype = "dashed"),
               panel.background = element_blank(),
               strip.background = element_rect(colour=NA,fill=NA))+
@@ -771,14 +917,15 @@ p1<-ggplot(data=data,aes(family, absorbance))+
 graph_list$ecoplate=p1
 
 # Figure functional diversity # ----
-graph<-ggdraw(xlim = c(0, 2), ylim = c(0, 2)) +
-  draw_plot(graph_list$PCA_phyto, 0, 1, 1, 1)+
-  draw_plot(graph_list$PCA_zoo, 1, 1, 1, 1)+
-  draw_plot(graph_list$ecoplate, 0, 0, 2, 1)+
-  draw_plot_label(c("A","B","C"),
-                  c(0,1,0),
-                  c(2,2,1), size = 30)
-ggsave(paste0(path_figures,"figure_fundiv.pdf"), graph, width = 12, height = 10, device=cairo_pdf)
+graph<-ggdraw(xlim = c(0, 3), ylim = c(0, 3)) +
+  draw_plot(graph_list$phyto_taxa_bv, 0.1, 2, 2.9, 1)+
+  draw_plot(graph_list$phyto_chlorophyceae_bv, 0, 1, 1, 1)+
+  draw_plot(graph_list$phyto_zygnematophyceae_bv, 1, 1, 1, 1)+
+  draw_plot(graph_list$phyto_dinophyceae_bv, 2, 1, 1, 1)+
+  draw_plot(graph_list$PCA_zoo, 0, 0, 1, 1)+
+  draw_plot(graph_list$ecoplate, 1, 0, 2, 1)+
+  draw_plot_label(c("A","B","C","D","E","F"), c(0,0,1,2,0,1), c(3,2,2,2,1,1), size = 30)
+ggsave(paste(path_figures,"figure_fundiv.pdf",sep=""),graph, width = 18, height = 14, device = cairo_pdf)
 
 ### PHYSIOLOGICAL RESPONSE OF PHYTOPLANKTON # ----
 # Chlorophyll concentration in seston (~cellular concentration of chlorophyll) # ----
@@ -804,13 +951,7 @@ p1<-ggplot(data=data)+
 graph_list$chloro_seston=p1
 
 # Mixotrophs # ----
-data<-melt(phyto[phyto$mixotrophic=="yes",], id.vars = c("family_old","species","family_1","family_2","mixotrophic"),
-           variable.name = "mesocosm", 
-           value.name = "concentration")
-data$mesocosm<-as.factor(data$mesocosm)
-levels(data$mesocosm)<-c(1:36)
-data<-merge(data,treatment,by="mesocosm")
-data<-aggregate(data=data, concentration~mesocosm+OM+light+fish,FUN=sum)
+data<-aggregate(data=phyto_bv[phyto_bv$mixotrophic=="yes",], concentration~mesocosm+OM+light+fish,FUN=sum)
 
 model<-lm(data=data,concentration~fish*light*OM)
 par(mfrow=c(2,2))
@@ -819,47 +960,8 @@ stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
 stat_list$mixo=get_stat_table(stat)
 
-p1<-ggplot(data=data)+
-  geom_boxplot(aes(light,log(concentration),fill=OM))+
-  facet_wrap(~fish)+
-  colour_OM+
-  theme+theme(legend.position=c(0.1,0.9),
-              legend.background=element_blank(),
-              legend.box.background=element_rect(colour="black",fill="white"))+
-  ylab(expression("Mixotrophs (Log cell "*mL^{-1}*")"))
-
-graph_list$mixo=p1
-
-# C:N of seston # ----
-model<-lm(data=CNP,C.N~fish*light*OM)
-par(mfrow=c(2,2))
-plot(model)
-stat<-Anova(model,type=2,test.statistic="F")
-stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$CN=get_stat_table(stat)
-
-p1<-ggplot(data=CNP)+
-  geom_boxplot(aes(light,C.N,fill=OM))+
-  facet_wrap(~fish)+
-  colour_OM+
-  theme+theme(legend.position=c(0.1,0.9),
-              legend.background=element_blank(),
-              legend.box.background=element_rect(colour="black",fill="white"))+
-  ylab(expression("Seston C:N ratio"))
-
-graph_list$CN=p1
-
-# C:P of seston # ----
-model<-lm(data=CNP,C.P~fish*light*OM)
-par(mfrow=c(2,2))
-plot(model)
-stat<-Anova(model,type=2,test.statistic="F")
-stat<-stat[1:3,c("F value","Df","Pr(>F)")]
-stat_list$CP=get_stat_table(stat)
-
 # Tukey test
-model<-lm(data=CNP, C.P~fish)
-summary(model) # to get the quantitative effect of significant treatments
+model<-lm(data=data,log(concentration)~fish)
 tukey<-emmeans(model, specs = ~fish)
 tukey<-cld(tukey,
            alpha=0.05,
@@ -867,19 +969,232 @@ tukey<-cld(tukey,
 tukey$x=1.5
 tukey$xmin=0.5
 tukey$xmax=2.5
-tukey$y=c(900,1120)
+tukey$y=c(10^0.5,10)
+tukey$.group<-as.factor(tukey$.group)
+levels(tukey$.group)<-c("a","b")
+
+p1<-ggplot(data=data)+
+  geom_boxplot(aes(light,concentration,fill=OM))+
+  geom_text(data=tukey,aes(x,y*1.3,label=.group),size=7,fontface = "bold")+
+  geom_errorbarh(data=tukey,aes(xmin=xmin,xmax=xmax,y=y),height=0.1)+
+  facet_wrap(~fish)+
+  colour_OM+
+  theme+theme(legend.position=c(0.9,0.9),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"))+
+  y_axis_log10+
+  ylab(expression("Mixotrophs ("*mm^3*" "*L^{-1}*")"))
+
+# displays significant effects on the graph
+label<-data.frame(label="fish *",x=1,y=1)
+label<-ggplot(data=label)+
+  geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
+  theme_void()
+
+graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
+  draw_plot(p1, 0, 0, 1, 1)+
+  draw_plot(label,0.6,0.75,0.25,0.2,hjust=0)
+
+graph_list$mixo=graph
+
+# C:N vs chloro # ----
+data<-BBE[BBE$taxon_BBE=="green_algae" & BBE$date=="01/10/15",c("mesocosm","BBE","OM","fish","light")]
+data<-merge(data,CNP[,c("mesocosm","C.N","C.P")],by="mesocosm")
+
+# stat C:N
+model<-lm(data=data,C.N~BBE*fish*light*OM)
+par(mfrow=c(2,2))
+plot(model)
+stat<-Anova(model,type=2,test.statisticf="F")
+stat<-get_stat_table(stat[-nrow(stat),c("F value","Df","Pr(>F)")])
+stat<-stat[,colnames(stat)%in%c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM")]
+stat_list$CN_chloro=stat
+
+p1<-ggplot(data=data,aes(BBE,C.N,colour=light,fill=light))+
+  geom_smooth(method="lm")+
+  geom_point()+
+  scale_color_manual(values=c("darkcyan","gold"))+
+  scale_fill_manual(values=c("darkcyan","gold"))+
+  theme+theme(legend.position=c(0.11,0.9),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"),
+              axis.text.x=element_text(),
+              axis.title.x=element_text(),
+              axis.ticks.x=element_line())+
+  xlab(label_chloro)+
+  ylab("C:N of seston")
+
+# displays significant effects on the graph
+label<-data.frame(label="light *",x=1,y=1)
+label<-ggplot(data=label)+
+  geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
+  theme_void()
+
+graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
+  draw_plot(p1, 0, 0, 1, 1)+
+  draw_plot(label,0.15,0.75,0.35,0.3,hjust=0)
+
+graph_list$CN_chloro=graph
+
+# C:P vs chloro # ----
+model<-lm(data=data,C.P~BBE*fish*light*OM)
+par(mfrow=c(2,2))
+plot(model)
+stat<-Anova(model,type=2,test.statisticf="F")
+stat<-get_stat_table(stat[-nrow(stat),c("F value","Df","Pr(>F)")])
+stat<-stat[,colnames(stat)%in%c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM")]
+stat_list$CP_chloro=stat
+
+p1<-ggplot(data=data,aes(BBE,C.P,colour=fish,fill=fish))+
+  geom_smooth(method="lm")+
+  geom_point()+
+  scale_color_manual(values=c("cadetblue","orangered"))+
+  scale_fill_manual(values=c("cadetblue","orangered"))+
+  theme+theme(legend.position=c(0.11,0.9),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"),
+              axis.text.x=element_text(),
+              axis.title.x=element_text(),
+              axis.ticks.x=element_line())+
+  xlab(label_chloro)+
+  ylab("C:P of seston")
+
+# displays significant effects on the graph
+label<-data.frame(label="fish *",x=1,y=1)
+label<-ggplot(data=label)+
+  geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
+  theme_void()
+
+graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
+  draw_plot(p1, 0, 0, 1, 1)+
+  draw_plot(label,0.2,0.75,0.35,0.3,hjust=0)
+
+graph_list$CP_chloro=graph
+
+# Figure physiological response of phytoplankton # ----
+graph<-ggdraw(xlim = c(0, 2), ylim = c(0, 2)) +
+  draw_plot(graph_list$chloro_seston, 0, 1, 1, 1)+
+  draw_plot(graph_list$mixo, 1, 1, 1, 1)+
+  draw_plot(graph_list$CN_chloro, 0, 0, 1, 1)+
+  draw_plot(graph_list$CP_chloro, 1, 0, 1, 1)+
+  draw_plot_label(c("A","B","C","D"),
+                  c(0,1,0,1),
+                  c(2,2,1,1), size = 30)
+ggsave(paste(path_figures,"figure_physio.pdf",sep=""), graph, width = 14, height = 10, device=cairo_pdf)
+
+### Export stat table # ----
+stat_table<-NULL
+names_data<-c("Chlorophyll","Zooplankton","Fish growth","Heterotrophic protists","Heterotrophic procaryotes","Sediments","DOC", # Figure 2
+              "Chlorophyceae","Zygnematophyceae","Dinophyceae","Diversity zoo", # Figure 3
+              "Chloro:seston","Mixotrophs","C:N-chloro","C:P-chloro") # Figure 4
+sub_stat_list<-stat_list[c("chloro","zoo","fish","hetero","bacteria","sediment","DOC", # Figure 2
+                           "phyto_chlorophyceae_bv","phyto_zygnematophyceae_bv","phyto_dinophyceae_bv","permanova_zoo", # Figure 3
+                           "chloro_seston","mixo","CN_chloro","CP_chloro")] # Figure 4
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a LaTeX table
+sink(paste0(path_figures,"table_stat.txt"))
+# header of the table
+cat("\\begin{tabular}{llccccccc}",sep="\n")
+cat("\\toprule",sep="\n")
+cat("\\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM \\\\",sep="\n")
+cat("\\cmidrule(r){1-1} \\cmidrule(l){2-9}",sep="\n")
+# variables presented in Figure 2
+start=0
+sub_stat_table<-stat_table[(start+1):(start+7*3),] # subtable for the variables of Figure 2
+for(i in 0:(nrow(sub_stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(sub_stat_table[i*3+j,]),collapse=" & ")
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(sub_stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\cmidrule(r){1-1} \\cmidrule(l){2-9}",sep="\n")
+# variables presented in Figure 3
+start=start+nrow(sub_stat_table)
+sub_stat_table<-stat_table[(start+1):(start+4*3),] # subtable for the variables of Figure 3
+for(i in 0:(nrow(sub_stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(sub_stat_table[i*3+j,]),collapse=" & ")
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(sub_stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\cmidrule(r){1-1} \\cmidrule(l){2-9}",sep="\n")
+# variables presented in Figure 4
+start=start+nrow(sub_stat_table)
+sub_stat_table<-stat_table[(start+1):(start+4*3),] # subtable for the variables of Figure 4
+for(i in 0:(nrow(sub_stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(sub_stat_table[i*3+j,]),collapse=" & ")
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(sub_stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\bottomrule",sep="\n")
+cat("\\end{tabular}")
+sink()
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat.csv"),row.names=FALSE)
+
+########################## ----
+# SUPPORTING INFORMATION # ----
+########################## ----
+
+### Taxa BBE # ----
+# Cyanobacteria # ----
+data<-BBE[BBE$taxon_BBE=="cyano",]
+
+model<-lmer(data=data, log(BBE+0.001)~fish*light*OM+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
+plot(model)
+qqnorm(resid(model))
+qqline(resid(model))
+summary(model)
+stat<-Anova(model,type=2,test.statistic="Chisq")
+stat_list$BBE_cyano=get_stat_table(stat)
+
+# Tukey test
+model<-lmer(data=data, log(BBE+0.001)~fish+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
+summary(model) # to get the quantitative effect of significant treatments
+tukey<-emmeans(model, specs = pairwise~fish)
+tukey<-cld(tukey$emmeans,
+           alpha=0.05,
+           Letters=letters)
+tukey$x=1.5
+tukey$xmin=0.5
+tukey$xmax=2.5
+tukey$y<-c(0.23,0.35)
 
 # figure
-p1<-ggplot(data=CNP)+
-      geom_boxplot(aes(light,C.P,fill=OM))+
-      geom_text(data=tukey,aes(x,y+50,label=.group),size=7,fontface = "bold")+
-      geom_errorbarh(data=tukey,aes(xmin=xmin,xmax=xmax,y=y),height=30)+
-      facet_wrap(~fish)+
-      colour_OM+
-      theme+theme(legend.position=c(0.1,0.9),
-                  legend.background=element_blank(),
-                  legend.box.background=element_rect(colour="black",fill="white"))+
-      ylab(expression("Seston C:P ratio"))
+data<-summarySE(data, measurevar="BBE", groupvars=c("OM","light","fish","mesocosm"),na.rm=TRUE)
+p1<-ggplot(data=data)+
+  geom_boxplot(aes(light,BBE,fill=OM))+
+  geom_text(data=tukey,aes(1.5,y+0.02,label=.group),size=7,fontface = "bold")+
+  geom_errorbarh(data=tukey,aes(xmin=xmin,xmax=xmax,y=y),height=0.02)+
+  facet_wrap(~fish)+
+  colour_chloro+
+  theme+theme(legend.position=c(0.12,0.9),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"))+
+  ylab(expression("Cyanobacteria pigments (\u03BCg L"^{-1}*")"))
 
 # displays significant effects on the graph
 label<-data.frame(label="fish ***",x=1,y=1)
@@ -889,29 +1204,67 @@ label<-ggplot(data=label)+
 
 graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
   draw_plot(p1, 0, 0, 1, 1)+
-  draw_plot(label,0.75,0.03,0.25,0.2,hjust=0)
+  draw_plot(label,0.7,0.1,0.3,0.2,hjust=0)
 
-graph_list$CP=graph
+graph_list$BBE_cyano=graph
 
-# Figure physiological response of phytoplankton # ----
-graph<-ggdraw(xlim = c(0, 2), ylim = c(0, 2)) +
-  draw_plot(graph_list$chloro_seston, 0, 1, 1, 1)+
-  draw_plot(graph_list$mixo, 1, 1, 1, 1)+
-  draw_plot(graph_list$CN, 0, 0, 1, 1)+
-  draw_plot(graph_list$CP, 1, 0, 1, 1)+
-  draw_plot_label(c("A","B","C","D"),
-                  c(0,1,0,1),
-                  c(2,2,1,1), size = 30)
-ggsave(paste(path_figures,"figure_physio.pdf",sep=""), graph, width = 14, height = 10, device=cairo_pdf)
+# Diatoms # ----
+data<-BBE[BBE$taxon_BBE=="diatoms",]
 
-########################## ----
-# SUPPORTING INFORMATION # ----
-########################## ----
+model<-lmer(data=data, log(BBE+0.001)~fish*light*OM+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
+plot(model)
+qqnorm(resid(model))
+qqline(resid(model))
+summary(model)
+stat<-Anova(model,type=2,test.statistic="Chisq")
+stat_list$BBE_diatoms=get_stat_table(stat)
+
+# Tukey test
+model<-lmer(data=data, log(BBE+0.001)~fish+light+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
+summary(model) # to get the quantitative effect of significant treatments
+tukey<-emmeans(model, specs = pairwise~fish+light)
+tukey<-cld(tukey$emmeans,
+           alpha=0.05,
+           Letters=letters)
+tukey$x=1.5
+tukey$xmin=0.5
+tukey$xmax=2.5
+tukey$y<-c(3,4,4,5)
+
+# figure
+data<-summarySE(data, measurevar="BBE", groupvars=c("OM","light","fish","mesocosm"),na.rm=TRUE)
+p1<-ggplot(data=data)+
+  geom_boxplot(aes(light,BBE,fill=OM))+
+  geom_text(data=tukey,aes(light,y+0.02,label=.group),size=7,fontface = "bold")+
+  facet_wrap(~fish)+
+  colour_chloro+
+  theme+theme(legend.position=c(0.12,0.9),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"))+
+  ylab(expression("Diatom pigments (\u03BCg L"^{-1}*")"))
+
+# displays significant effects on the graph
+label<-data.frame(label="fish *\nlight *",x=1,y=1)
+label<-ggplot(data=label)+
+  geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
+  theme_void()
+
+graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
+  draw_plot(p1, 0, 0, 1, 1)+
+  draw_plot(label,0.7,0.7,0.3,0.2,hjust=0)
+
+graph_list$BBE_diatoms=graph
+
+# Figure BBE # ----
+graph<-ggdraw(xlim = c(0, 2), ylim = c(0, 1)) +
+  draw_plot(graph_list$BBE_cyano, 0, 0, 1, 1)+
+  draw_plot(graph_list$BBE_diatoms, 1, 0, 1, 1)+
+  draw_plot_label(c("A","B"),
+                  c(0,1),
+                  c(1,1), size = 30)
+ggsave(paste(path_figures,"supp_BBE.pdf",sep=""), graph, width = 14, height = 6, device=cairo_pdf)
 
 ### Multipar # ----
-# Statistic table and figures # ----
-stat_list<-list()
-
 # Chlorophyll # ----
 model<-lmer(log(chlorophyll)~fish*light*OM+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
 plot(model)
@@ -977,11 +1330,13 @@ p1<-ggplot(data=data)+
   geom_boxplot(aes(depth,chlorophyll,fill=light))+
   facet_wrap(~fish)+
   scale_fill_manual(values=c("green4","green1"))+
-  theme+theme(legend.position=c(0.12,0.9),
+  theme+theme(legend.position=c(0.4,0.9),
               legend.background=element_blank(),
               legend.box.background=element_rect(colour="black",fill="white"),
               axis.title.x=element_text())+
-  xlab("Depth (m)")+
+  coord_flip()+
+  scale_x_discrete(limits=rev(levels(data$depth)))+
+  xlab("Depth (cm)")+
   ylab(label_chloro)
 
 # displays significant effects on the graph
@@ -992,7 +1347,7 @@ label<-ggplot(data=label)+
 
 graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
   draw_plot(p1, 0, 0, 1, 1)+
-  draw_plot(label,0.65,0.15,0.35,0.25,hjust=0)
+  draw_plot(label,0.65,0.65,0.35,0.25,hjust=0)
 
 graph_list$chloro_depth=graph
 
@@ -1188,6 +1543,47 @@ graph<-ggdraw(xlim = c(0, 2), ylim = c(0, 2)) +
                   c(2,2,1,1), size = 30)
 ggsave(paste(path_figures,"supp_multipar.pdf",sep=""), graph, width = 14, height = 10, device=cairo_pdf)
 
+### Export stat table water physico-chemistry # ----
+stat_table<-NULL
+names_data<-c("Chlorophyll","Temperature","Oxygen","pH","Turbidity")
+sub_stat_list<-stat_list[c("chloro_multipar","temperature","oxygen","pH","turbidity")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","depth","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_multipar.csv"),row.names=FALSE)
+
+# export as a LaTeX table
+stat_table<-stat_table[,c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM","depth")]
+sink(paste0(path_figures,"table_stat_multipar.txt"))
+# header of the table
+cat("\\begin{tabular}{llcccccccc}",sep="\n")
+cat("\\toprule",sep="\n")
+cat("\\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM & Depth \\\\",sep="\n")
+cat("\\cmidrule(r){1-1} \\cmidrule(l){2-10}",sep="\n")
+for(i in 0:(nrow(stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(stat_table[i*3+j,]),collapse=" & ")
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\bottomrule",sep="\n")
+cat("\\end{tabular}")
+sink()
+
 ### Dissolved nutrients # ----
 p1<-ggplot(data=nutri)+
   geom_boxplot(aes(date,N),fill="lightgrey")+
@@ -1214,10 +1610,12 @@ graph<-ggdraw(xlim = c(0, 3), ylim = c(0, 1)) +
 ggsave(paste(path_figures,"supp_nutrient.pdf",sep=""), graph, width = 14, height = 4.5, device=cairo_pdf)
 
 ### Seston # ----
+# Seston mass # ----
 model<-lm(data=seston,log(concentration)~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statisticf="F")
+stat<-stat[1:7,c("F value","Df","Pr(>F)")]
 stat_list$seston=get_stat_table(stat)
 
 # Tukey test
@@ -1247,11 +1645,80 @@ label<-ggplot(data=label)+
 
 graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
   draw_plot(p1, 0, 0, 1, 1)+
-  draw_plot(label,-0.02,0.5,0.4,0.2,hjust=0)
+  draw_plot(label,-0.04,0.5,0.45,0.3,hjust=0)
 
 graph_list$seston=graph
 
-ggsave(paste(path_figures,"supp_seston.pdf",sep=""), graph, width = 6, height = 5, device=cairo_pdf)
+# C:N of seston # ----
+model<-lm(data=CNP,C.N~fish*light*OM)
+par(mfrow=c(2,2))
+plot(model)
+stat<-Anova(model,type=2,test.statistic="F")
+stat<-stat[1:7,c("F value","Df","Pr(>F)")]
+stat_list$CN=get_stat_table(stat)
+
+p1<-ggplot(data=CNP)+
+  geom_boxplot(aes(light,C.N,fill=OM))+
+  facet_wrap(~fish)+
+  colour_OM+
+  theme+theme(legend.position=c(0.15,0.9),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"))+
+  ylab(expression("Seston C:N ratio"))
+
+graph_list$CN=p1
+
+# C:P of seston # ----
+model<-lm(data=CNP,C.P~fish*light*OM)
+par(mfrow=c(2,2))
+plot(model)
+stat<-Anova(model,type=2,test.statistic="F")
+stat<-stat[1:7,c("F value","Df","Pr(>F)")]
+stat_list$CP=get_stat_table(stat)
+
+# Tukey test
+model<-lm(data=CNP, C.P~fish)
+summary(model) # to get the quantitative effect of significant treatments
+tukey<-emmeans(model, specs = ~fish)
+tukey<-cld(tukey,
+           alpha=0.05,
+           Letters=letters)
+tukey$x=1.5
+tukey$xmin=0.5
+tukey$xmax=2.5
+tukey$y=c(900,1120)
+
+# figure
+p1<-ggplot(data=CNP)+
+  geom_boxplot(aes(light,C.P,fill=OM))+
+  geom_text(data=tukey,aes(x,y+50,label=.group),size=7,fontface = "bold")+
+  geom_errorbarh(data=tukey,aes(xmin=xmin,xmax=xmax,y=y),height=30)+
+  facet_wrap(~fish)+
+  colour_OM+
+  theme+theme(legend.position=c(0.15,0.9),
+              legend.background=element_blank(),
+              legend.box.background=element_rect(colour="black",fill="white"))+
+  ylab(expression("Seston C:P ratio"))
+
+# displays significant effects on the graph
+label<-data.frame(label="fish ***",x=1,y=1)
+label<-ggplot(data=label)+
+  geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
+  theme_void()
+
+graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
+  draw_plot(p1, 0, 0, 1, 1)+
+  draw_plot(label,0.25,0.75,0.35,0.2,hjust=0)
+
+graph_list$CP=graph
+
+# Final graph # ----
+graph<-ggdraw(xlim = c(0, 3), ylim = c(0, 1)) +
+  draw_plot(graph_list$seston, 0, 0, 1, 1)+
+  draw_plot(graph_list$CN, 1, 0, 1, 1)+
+  draw_plot(graph_list$CP, 2, 0, 1, 1)+
+  draw_plot_label(c("A","B","C"), c(0,1,2), c(1,1,1), size = 30)
+ggsave(paste(path_figures,"supp_seston_CN_CP.pdf",sep=""), graph, width = 16, height = 5.5, device=cairo_pdf)
 
 ### Phytoplankton cytometry # ----
 # Pico phytoplankton # ----
@@ -1560,6 +2027,120 @@ graph<-ggdraw(xlim = c(0, 3), ylim = c(0, 3)) +
   draw_plot_label(c("A","B","C","D","E","F","G"), c(0,0,1,2,0,1,2), c(3,2,2,2,1,1,1), size = 30)
 ggsave(paste(path_figures,"supp_phytoplankton_family.pdf",sep=""),graph, width = 20, height = 14, device = cairo_pdf)
 
+### Phytoplankton identification vs other variables # ----
+data<-phyto_bv[phyto_bv$family_1%in%c("Dinophyceae","Zygnematophyceae"),]
+data<-aggregate(concentration~family_1+mesocosm+OM+light+fish+treatment, data=data, sum)
+data<-dcast(data=data,mesocosm+OM+light+fish+treatment~family_1,value.var="concentration")
+data$ratio=data$Zygnematophyceae/(data$Zygnematophyceae+data$Dinophyceae)
+
+# chlorophyll and stoichiometry data
+data_bis<-BBE[BBE$taxon_BBE=="green_algae" & BBE$date=="01/10/15",c("mesocosm","BBE","OM","fish","light")]
+data_bis<-merge(data_bis,CNP[,c("mesocosm","C.N","C.P")],by="mesocosm")
+data<-merge(data,data_bis[,c("mesocosm","C.N","C.P","BBE")],by="mesocosm")
+data_bis<-DOC[DOC$date=="2015_09_24",]
+data_bis<-aggregate(DOC~mesocosm+OM+light+fish+treatment, data=data_bis, mean)
+data<-merge(data,data_bis[,c("mesocosm","DOC")],by="mesocosm")
+rm(data_bis)
+cor(data$BBE,data$Zygnematophyceae)
+
+
+ggplot(data=data,aes(Zygnematophyceae,BBE,colour=fish,fill=fish))+
+  geom_smooth(method="lm")+
+  geom_point()+
+  scale_color_manual(values=c("cadetblue","orangered"))+
+  scale_fill_manual(values=c("cadetblue","orangered"))+
+  theme+theme(axis.title.x=element_text())
+
+ggplot(data=data,aes(Zygnematophyceae,BBE,colour=light,fill=light))+
+  geom_smooth(method="lm")+
+  geom_point()+
+  scale_color_manual(values=c("darkcyan","gold"))+
+  scale_fill_manual(values=c("darkcyan","gold"))+
+  theme+theme(axis.title.x=element_text())
+
+ggplot(data=data,aes(Dinophyceae,BBE,colour=fish,fill=fish))+
+  geom_smooth(method="lm")+
+  geom_point()+
+  scale_color_manual(values=c("cadetblue","orangered"))+
+  scale_fill_manual(values=c("cadetblue","orangered"))+
+  theme+theme(axis.title.x=element_text())
+
+ggplot(data=data,aes(Zygnematophyceae,C.N,colour=fish,fill=fish))+
+  geom_smooth(method="lm")+
+  geom_point()+
+  scale_color_manual(values=c("cadetblue","orangered"))+
+  scale_fill_manual(values=c("cadetblue","orangered"))+
+  theme+theme(axis.title.x=element_text())
+
+ggplot(data=data,aes(Zygnematophyceae,C.N,colour=light,fill=light))+
+  geom_smooth(method="lm")+
+  geom_point()+
+  scale_color_manual(values=c("darkcyan","gold"))+
+  scale_fill_manual(values=c("darkcyan","gold"))+
+  theme+theme(axis.title.x=element_text())
+
+### Export stat table phytoplankton # ----
+stat_table<-NULL
+names_data<-c("Seston","C:N seston","C:P seston","Cyanobacteria (BBE)","Diatoms (BBE)","Pico-phytoplankton","Nano-phytoplankton","Chlorophyceae","Cyanobacteria","Dinophyceae","Trebouxiophyceae","Zygnematophyceae","Shannon index")
+sub_stat_list<-stat_list[c("seston","CN","CP","BBE_cyano","BBE_diatoms","pico","nano","phyto_chlorophyceae","phyto_cyanobacteria","phyto_dinophyceae","phyto_trebouxiophyceae","phyto_zygnematophyceae","phyto_shannon")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_phyto.csv"),row.names=FALSE)
+
+# export general phyto data as a LaTeX table
+sub_stat_table<-stat_table[1:21,]
+sink(paste0(path_figures,"table_stat_phyto.txt"))
+# header of the table
+cat("\\begin{tabular}{llccccccc}",sep="\n")
+cat("\\toprule",sep="\n")
+cat("\\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM \\\\",sep="\n")
+cat("\\cmidrule(r){1-1} \\cmidrule(l){2-9}",sep="\n")
+for(i in 0:(nrow(sub_stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(sub_stat_table[i*3+j,]),collapse=" & ")
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(sub_stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\bottomrule",sep="\n")
+cat("\\end{tabular}")
+sink()
+
+# export taxonomic phyto data as a LaTeX table
+sub_stat_table<-stat_table[22:nrow(stat_table),]
+sink(paste0(path_figures,"table_stat_phyto_taxa.txt"))
+# header of the table
+cat("\\begin{tabular}{llccccccc}",sep="\n")
+cat("\\toprule",sep="\n")
+cat("\\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM \\\\",sep="\n")
+cat("\\cmidrule(r){1-1} \\cmidrule(l){2-9}",sep="\n")
+for(i in 0:(nrow(sub_stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(sub_stat_table[i*3+j,]),collapse=" & ")
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(sub_stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\bottomrule",sep="\n")
+cat("\\end{tabular}")
+sink()
+
 ### Zooplankton identification # ----
 # Copepoda # ----
 # global
@@ -1568,6 +2149,7 @@ plot(model)
 qqnorm(resid(model))
 qqline(resid(model))
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$copepoda=get_stat_table(stat)
 model<-glmmPQL(data=zoo, copepode~light+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 summary(model)
@@ -1605,6 +2187,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$cladocera=get_stat_table(stat)
 
 # per sample date
@@ -1651,6 +2234,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$rotifer=get_stat_table(stat)
 
 # per sample date
@@ -1694,6 +2278,26 @@ graph<-ggdraw(xlim = c(0, 2.2), ylim = c(0, 2)) +
                   c(2,2,1,1), size = 30)
 ggsave(paste(path_figures,"supp_zoo_aggregated.pdf",sep=""), graph, width = 14, height = 12, device=cairo_pdf)
 
+### Export stat table zooplankton aggregated # ----
+stat_table<-NULL
+names_data<-c("Copepoda","Cladocera","Rotifer","Copepoda","Cladocera","Rotifer","Copepoda","Cladocera","Rotifer")
+sub_stat_list<-stat_list[c("copepoda","cladocera","rotifer","copepoda_aug","cladocera_aug","rotifer_aug","copepoda_sep","cladocera_sep","rotifer_sep")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_zoo_aggregated.csv"),row.names=FALSE)
+
 # Cyclopids # ----
 # global
 model<-glmer(data=zoo, cyclopide~fish*light*OM+date+(1|mesocosm), family = poisson)
@@ -1704,6 +2308,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$cyclopidae=get_stat_table(stat)
 
 # per sample date
@@ -1741,6 +2346,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$nauplii=get_stat_table(stat)
 
 # per sample date
@@ -1778,6 +2384,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$chydoridae=get_stat_table(stat)
 
 # per sample date
@@ -1815,6 +2422,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$lecane=get_stat_table(stat)
 
 # per sample date
@@ -1852,6 +2460,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$lepadella=get_stat_table(stat)
 
 # per sample date
@@ -1889,6 +2498,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$bdelloide=get_stat_table(stat)
 
 # per sample date
@@ -1926,6 +2536,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$polyarthra=get_stat_table(stat)
 
 # per sample date
@@ -1963,6 +2574,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
+stat<-stat[c(1:3,5:8),]
 stat_list$keratella=get_stat_table(stat)
 
 # per sample date
@@ -1995,7 +2607,7 @@ model<-glm(data=zoo[zoo$date=="25/09/2015",], brachionus~fish*light*OM, family =
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$brachionus_sep=get_stat_table(stat)
+stat_list$brachionus=get_stat_table(stat)
 
 # figure
 p1<-ggplot(data=zoo[zoo$date=="25/09/2015",])+
@@ -2065,6 +2677,66 @@ graph<-ggdraw(xlim = c(0, 3.2), ylim = c(0, 1)) +
                   c(0,1,2,2),
                   c(1,1,1,0.5), size = 30)
 ggsave(paste(path_figures,"supp_rotifer_large.pdf",sep=""), graph, width = 20, height = 8, device=cairo_pdf)
+
+### Export stat table zooplankton global # ----
+stat_table<-NULL
+names_data<-c("Cyclopidae","Nauplii","Chydoridae","Lecane","Lepadella","Bdelloide","Polyarthra","Keratella")
+sub_stat_list<-stat_list[c("cyclopidae","nauplii","chydoridae","lecane","lepadella","bdelloide","polyarthra","keratella")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_zoo_global.csv"),row.names=FALSE)
+
+### Export stat table zooplankton August # ----
+stat_table<-NULL
+names_data<-c("Cyclopidae","Nauplii","Chydoridae","Lecane","Lepadella","Bdelloide","Polyarthra","Keratella")
+sub_stat_list<-stat_list[c("cyclopidae_aug","nauplii_aug","chydoridae_aug","lecane_aug","lepadella_aug","bdelloide_aug","polyarthra_aug","keratella_aug")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_zoo_aug.csv"),row.names=FALSE)
+
+### Export stat table zooplankton September # ----
+stat_table<-NULL
+names_data<-c("Cyclopidae","Nauplii","Chydoridae","Lecane","Lepadella","Bdelloide","Polyarthra","Keratella","Brachionus","Anuraeopsis")
+sub_stat_list<-stat_list[c("cyclopidae_sep","nauplii_sep","chydoridae_sep","lecane_sep","lepadella_sep","bdelloide_sep","polyarthra_sep","keratella_sep","brachionus","anuraeopsis")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_zoo_sep.csv"),row.names=FALSE)
 
 ### Functional diversity of bacteria - Ecoplates # ----
 # amines # ----
@@ -2276,6 +2948,88 @@ graph<-ggdraw(xlim = c(0, 3.25), ylim = c(0, 2)) +
                   c(2,2,2,1,1,1), size = 30)
 ggsave(paste(path_figures,"supp_ecoplate_substrats.pdf",sep=""), graph, width = 18, height = 12, device=cairo_pdf)
 
+### Export stat table ecoplates pelagic # ----
+stat_table<-NULL
+names_data<-c("Amine","Amino acids","Carbohydrates","Carboxylic acids","Phenolic acids","Polymer")
+sub_stat_list<-stat_list[c("eco_amine_pel","eco_aminoacid_pel","eco_carbohydrate_pel","eco_carboacid_pel","eco_phenol_pel","eco_polymer_pel")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_eco_pelagic.csv"),row.names=FALSE)
+
+# export as a LaTeX table
+sink(paste0(path_figures,"table_stat_eco.txt"))
+# header of the table
+cat("\\begin{tabular}{cllccccccc}",sep="\n")
+cat("\\toprule",sep="\n")
+cat("& \\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM \\\\",sep="\n")
+cat("\\cmidrule(r){1-2} \\cmidrule(l){3-10}",sep="\n")
+for(i in 0:(nrow(stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(stat_table[i*3+j,]),collapse=" & ")
+    if(i==0 & j==1){
+      line<-paste0("\\multirow{18}{*}{\\rotatebox[origin=c]{90}{pelagic}} & ",line)
+    }else{
+      line<-paste0(" & ",line)
+    }
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+
+### Export stat table ecoplates benthic # ----
+stat_table<-NULL
+names_data<-c("Amine","Amino acids","Carbohydrates","Carboxylic acids","Phenolic acids","Polymer")
+sub_stat_list<-stat_list[c("eco_amine_ben","eco_aminoacid_ben","eco_carbohydrate_ben","eco_carboacid_ben","eco_phenol_ben","eco_polymer_ben")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_eco_benthic.csv"),row.names=FALSE)
+
+# export as a LaTeX table
+cat("\\cmidrule(r){1-2} \\cmidrule(l){3-10}",sep="\n")
+for(i in 0:(nrow(stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(stat_table[i*3+j,]),collapse=" & ")
+    if(i==0 & j==1){
+      line<-paste0("\\multirow{18}{*}{\\rotatebox[origin=c]{90}{benthic}} & ",line)
+    }else{
+      line<-paste0(" & ",line)
+    }
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\bottomrule",sep="\n")
+cat("\\end{tabular}")
+sink()
+
 # alpha-cyclodextrine # ----
 # pelagic
 model<-lm(data=eco[eco$substrat=="E1" & eco$compartment=="pelagic",],
@@ -2304,7 +3058,7 @@ p1<-ggplot(data=eco[eco$substrat=="E1",])+
   colour_bacteria+
   theme+theme(legend.position="none")+
   ylab(label_OD)+
-  ggtitle(expression(alpha*"-cyclodextrine"))
+  ggtitle(expression(alpha*"-cyclodextrin"))
 
 graph_list$eco_alphacyclo=p1
 
@@ -2377,11 +3131,93 @@ p1<-p1+theme(legend.position="right")
 legend<-get_legend(p1)
 
 graph<-ggdraw(xlim = c(0, 3.25), ylim = c(0, 1)) +
-  draw_plot(graph_list$eco_carboacid, 0, 0, 1, 1)+
-  draw_plot(graph_list$eco_phenol, 1, 0, 1, 1)+
-  draw_plot(graph_list$eco_polymer, 2, 0, 1, 1)+
+  draw_plot(graph_list$eco_alphacyclo, 0, 0, 1, 1)+
+  draw_plot(graph_list$eco_cellobiose, 1, 0, 1, 1)+
+  draw_plot(graph_list$eco_asparagine, 2, 0, 1, 1)+
   draw_plot(legend, 3, 0.4, 0.25, 0.2)+
   draw_plot_label(c("A","B","C"),
                   c(0,1,2),
                   c(1,1,1), size = 30)
 ggsave(paste(path_figures,"supp_ecoplate_substrats_DOC.pdf",sep=""), graph, width = 18, height = 6, device=cairo_pdf)
+
+### Export stat table substrates pelagic # ----
+stat_table<-NULL
+names_data<-c("α-cyclodextrine","D-cellobiose","L-asparagine")
+sub_stat_list<-stat_list[c("eco_alphacyclo_pel","eco_cellobiose_pel","eco_asparagine_pel")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_sub_pelagic.csv"),row.names=FALSE)
+
+# export as a LaTeX table
+sink(paste0(path_figures,"table_stat_sub.txt"))
+# header of the table
+cat("\\begin{tabular}{cllccccccc}",sep="\n")
+cat("\\toprule",sep="\n")
+cat("& \\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM \\\\",sep="\n")
+cat("\\cmidrule(r){1-2} \\cmidrule(l){3-10}",sep="\n")
+for(i in 0:(nrow(stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(stat_table[i*3+j,]),collapse=" & ")
+    if(i==0 & j==1){
+      line<-paste0("\\multirow{9}{*}{\\rotatebox[origin=c]{90}{pelagic}} & ",line)
+    }else{
+      line<-paste0(" & ",line)
+    }
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+
+### Export stat table substrates benthic # ----
+stat_table<-NULL
+names_data<-c("α-cyclodextrine","D-cellobiose","L-asparagine")
+sub_stat_list<-stat_list[c("eco_alphacyclo_ben","eco_cellobiose_ben","eco_asparagine_ben")]
+for(i in 1:length(sub_stat_list)){
+  data<-as.data.frame(sub_stat_list[[i]])
+  data<-rownames_to_column(data,"row_names")
+  data<-cbind(Variable=c("",names_data[i],""),data)
+  stat_table<-bind_rows(stat_table,data)
+}
+stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
+stat_table$row_names[stat_table$row_names=="F value"]="F"
+stat_table$row_names[stat_table$row_names=="Chisq"]="$\\chi^2$"
+stat_table[is.na(stat_table)]="-"
+names(stat_table)<-c("Variable"," ","Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+
+# export as a csv file
+stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
+write.table(stat_table,paste0(path_figures,"table_stat_sub_benthic.csv"),row.names=FALSE)
+
+# export as a LaTeX table
+cat("\\cmidrule(r){1-2} \\cmidrule(l){3-10}",sep="\n")
+for(i in 0:(nrow(stat_table)/3-1)){
+  for(j in 1:3){
+    line<-paste(as.character(stat_table[i*3+j,]),collapse=" & ")
+    if(i==0 & j==1){
+      line<-paste0("\\multirow{9}{*}{\\rotatebox[origin=c]{90}{benthic}} & ",line)
+    }else{
+      line<-paste0(" & ",line)
+    }
+    cat(paste(line,"\\\\"),sep="\n")
+  }
+  if(i<nrow(stat_table)/3-1){
+    cat("\\addlinespace",sep="\n")
+  }
+}
+cat("\\bottomrule",sep="\n")
+cat("\\end{tabular}")
+sink()
