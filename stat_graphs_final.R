@@ -1,4 +1,6 @@
 ### PACKAGES ### ----
+#require(devtools)
+#install_version("vegan", version = "2.6.4", repos = "http://cran.us.r-project.org") # the new version of vegan does not provide the detail of the aov table (only the overall model)
 sessionInfo()
 # R version 4.3.1
 # attached packages
@@ -7,7 +9,8 @@ sessionInfo()
 # survival_3.5-5     mvtnorm_1.2-3      emmeans_1.8.8      car_3.1-2          carData_3.0-5      lmerTest_3.1-3    
 # MASS_7.3-60        nlme_3.1-162       lme4_1.1-34        Matrix_1.6-1.1     tibble_3.2.1       dplyr_1.1.3       
 # Rmisc_1.5.1        plyr_1.8.9         lattice_0.21-8     reshape2_1.4.4     Unicode_15.0.0-1   RColorBrewer_1.1-3
-# viridis_0.6.4      viridisLite_0.4.2  scales_1.2.1       gridExtra_2.3      cowplot_1.1.1      ggplot2_3.4.3     
+# viridis_0.6.4      viridisLite_0.4.2  scales_1.2.1       gridExtra_2.3      cowplot_1.1.1      ggplot2_3.4.3
+# effectsize_1.0.0
 # loaded via a namespace (and not attached):
 # tidyselect_1.2.0     fastmap_1.1.1        digest_0.6.33        estimability_1.4.1   timechange_0.2.0    
 # lifecycle_1.0.3      cluster_2.1.4        magrittr_2.0.3       compiler_4.3.1       rlang_1.1.1         
@@ -34,6 +37,7 @@ library(dplyr)
 library(tibble)
 # Stat packages
 library(lme4) # mixed models
+#library(lmerTest) # to get the degree of freedom of each t-test when calling summary() for mixed models
 library(nlme) # random effects
 library(MASS) # for quasi-Poisson mixed model
 #library(lmerTest)
@@ -44,11 +48,11 @@ library(multcomp) # to display the results of the Tukey test
 library(blmeco) # to test the dispersion of Poisson distribution
 library(Rmisc)
 #library(pscl)
-#library(lmerTest)
 library(multcompView)
 library(FactoMineR) # PCA analysis
 library(factoextra) # to represent eigen values of PCA
 library(vegan) # for PERMANOVA
+library(effectsize) # to calculate effect size
 # Miscellaneous packages
 library(lubridate) # date format
 library(rstudioapi) # to set the working directory
@@ -110,7 +114,8 @@ coord_radar <- function (theta = "x", start = 0, direction = 1)
 }
 
 ### OUTPUT FORMATTING ### ----
-get_stat_table<-function(stat){
+get_stat_table<-function(stat,smry){
+  # statistics
   stat_out<-stat
   for(i in 1:ncol(stat_out)){
     stat_out[,i]<-as.character(stat_out[,i])
@@ -120,9 +125,81 @@ get_stat_table<-function(stat){
     stat_out[stat[,i]<10,i]<-round(stat[stat[,i]<10,i],3)
   }
   stat_out[stat_out[,3]=="0",3]<-"<.001"
+  for(i in 1:nrow(stat_out)){
+    if(stat[i,3]<0.05){
+      stat_out[i,3]=paste0("\\textbf{",stat_out[i,3],"}") # put significant results in bold
+    }
+  }
+  # fill in the missing treatments
+  treatment=c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM")
+  stat_out$treatment<-row.names(stat_out)
+  stat_out<-merge(stat_out,
+                  data.frame(treatment=treatment),
+                  by="treatment",all=TRUE)
+  stat_out[is.na(stat_out)]="-" # not tested in -
+  stat_out$treatment<-factor(stat_out$treatment,levels=treatment)
+  stat_out<-stat_out[order(stat_out$treatment), ]
+  row.names(stat_out)<-treatment
+  stat_out$treatment<-NULL
+  # ready the table
   stat_out<-t(stat_out)
   stat_out<-stat_out[c(3,1,2),]
+  # effect size
+  if(is.null(smry)==FALSE){
+    df_error<-smry$df[2]
+    smry<-smry$coefficients
+    smry<-smry[,c("t value")]
+    smry<-as.data.frame(smry)
+    smry$treatment<-row.names(smry)
+    smry$effect_size<-t_to_d(smry$smry,df_error)$d # calculates the Cohen's d
+    smry$effect_size<-round(smry$effect_size,2)
+    smry$effect_size<-as.character(smry$effect_size)
+    # fill in the missing treatments
+    treatment=c("fishFish +","lightLight +","OMOM +","fishFish +:lightLight +","fishFish +:OMOM +","lightLight +:OMOM +","fishFish +:lightLight +:OMOM +")
+    smry<-merge(smry,
+                data.frame(treatment=treatment),
+                by="treatment",all=TRUE)
+    smry<-smry[-1,] # removes the intercept
+    smry$effect_size[is.na(smry$effect_size)]="-" # not tested in -
+    smry$treatment<-factor(smry$treatment,levels=treatment)
+    smry<-smry[order(smry$treatment), ]
+  }
+  # final table
+  if(is.null(smry)){
+    stat_out["Df",]="-"
+  }else{stat_out["Df",]=smry$effect_size}
+  row.names(stat_out)[3]<-"ES"
   return(stat_out)
+}
+
+get_group_size<-function(data){
+  data<-data[,c("treatment")]
+  data<-as.data.frame(table(data))
+  names(data)<-c("treatment","n")
+  levels(data$treatment)<-c("ref","OMOM +","lightLight +","lightLight +:OMOM +","fishFish +","fishFish +:OMOM +","fishFish +:lightLight +","fishFish +:lightLight +:OMOM")
+  return(data)
+}
+
+get_size_effect_table<-function(stat){
+  df_error<-stat$df[2]
+  stat<-stat$coefficients
+  stat<-stat[row.names(stat)!="(Intercept)",c("t value")]
+  stat<-as.data.frame(stat)
+  stat$treatment<-row.names(stat)
+  stat$effect_size<-t_to_d(stat$stat,df_error)$d # calculates the Cohen's d
+  #stat$effect_size<-round(stat$effect_size,1-floor(log10(abs(stat$effect_size)))) # remove the extra digit
+  stat$effect_size<-as.character(stat$effect_size)
+  stat<-merge(stat,
+              data.frame(treatment=c("fishFish +","lightLight +","OMOM +","fishFish +:lightLight +","fishFish +:OMOM +","lightLight +:OMOM +","fishFish +:lightLight +:OMOM +")),
+              by="treatment",all=TRUE)
+  stat$effect_size[is.na(stat$effect_size)]="-" # not tested in -
+  return(stat)
+}
+
+latex_bold<-function(data,treatments){
+  data$effect_size[data$treatment%in%treatments]<-
+    paste0("\\textbf{",data$effect_size[data$treatment%in%treatments],"}") # put significant values in bold
+  return(data)
 }
   
 ### LOAD DATA ### ----
@@ -149,6 +226,7 @@ zoodry<-merge(zoodry,treatment,by="mesocosm")
 # fish growth #
 fish<-read.table(paste0(path_data,"fish.csv"),sep=";",header=TRUE)
 fish$mesocosm<-as.factor(fish$mesocosm)
+fish$duration<-fish$duration/30 # conversion from day to month
 fish$growth<-(fish$final_mass - fish$initial_mass)/fish$duration
 fish$relative_growth<-(fish$final_mass - fish$initial_mass)/fish$duration/fish$initial_mass
 fish<-merge(fish,treatment,by="mesocosm")
@@ -312,6 +390,7 @@ seston$date<-"01/10/15"
 
 ### RESULT STORAGE STRUCTURES ### ----
 stat_list<-list()
+size_effect_list<-list()
 graph_list<-list()
 
 ############# ----
@@ -322,12 +401,19 @@ graph_list<-list()
 data<-BBE[BBE$taxon_BBE=="green_algae",]
 
 model<-lmer(data=data, log(BBE)~fish*light*OM+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
+# normality of residuals
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# statistical test and effect sizes
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$chloro=get_stat_table(stat)
+model<-lm(data=data, BBE~fish*light) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$chloro=get_stat_table(stat,smry)
 
 # Tukey test
 model<-lmer(data=data, log(BBE)~fish*light+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
@@ -358,7 +444,7 @@ label<-ggplot(data=label)+
 
 graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
   draw_plot(p1, 0, 0, 1, 1)+
-  draw_plot(label,0.5,0.1,0.45,0.2,hjust=0)
+  draw_plot(label,0.5,0.1,0.47,0.2,hjust=0)
 
 graph_list$chloro=graph
 
@@ -366,9 +452,13 @@ graph_list$chloro=graph
 model<-lm(data=zoodry,log(concentration)~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+summary(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$zoo=get_stat_table(stat)
+smry<-NULL
+stat_list$zoo=get_stat_table(stat,smry)
 
 p1<-ggplot(data=zoodry)+
   geom_boxplot(aes(light,concentration,fill=OM))+
@@ -390,9 +480,20 @@ fish$growth_rate<-(log(fish$final_mass)-log(fish$initial_mass))/fish$duration
 model<-lm(data=fish,growth_rate~light*OM+species)
 par(mfrow=c(2,2))
 plot(model)
+summary(model)
+# statistical test and effect sizes
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1,2,4),c("F value","Df","Pr(>F)")]
-stat_list$fish=get_stat_table(stat)
+model<-lm(data=fish, growth_rate~light) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$fish=get_stat_table(stat,smry)
+
+# simple size effects
+stat<-summary(model)
+stat$coefficients<-stat$coefficients[rownames(stat$coefficients)!="speciesrotengle",]
+stat<-get_size_effect_table(stat)
+#size_effect_list$fish$prediction=c("","\\textcolor{blue}{\\textbf{+}}","")
+size_effect_list$fish<-latex_bold(stat,c("lightLight +")) # put significant values in bold
 
 # Tukey test
 model<-lm(data=fish, growth_rate~light)
@@ -401,7 +502,7 @@ tukey<-emmeans(model, specs = ~light)
 tukey<-cld(tukey,
            alpha=0.05,
            Letters=letters)
-tukey$y=c(0.0015,0.003)
+tukey$y=c(0.05,0.08)
 
 p1<-ggplot(data=fish)+
   geom_boxplot(aes(light,growth_rate,fill=OM),position="dodge")+
@@ -410,7 +511,7 @@ p1<-ggplot(data=fish)+
   theme+theme(legend.position=c(0.12,0.9),
               legend.background=element_blank(),
               legend.box.background=element_rect(colour="black",fill="white"))+
-  ylab(expression("Fish relative growth rate (day"^{-1}*")"))
+  ylab(expression("Fish relative growth rate (month"^{-1}*")"))
 
 # displays significant effects on the graph
 label<-data.frame(label="light **",x=1,y=1)
@@ -428,9 +529,13 @@ graph_list$fish=graph
 model<-lm(data=sediment,log(mass)~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$sediment=get_stat_table(stat)
+model<-lm(data=sediment, mass~fish) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$sediment=get_stat_table(stat,smry)
 
 # Tukey test
 model<-lm(data=sediment,log(mass)~fish)
@@ -470,11 +575,17 @@ graph_list$sediment=graph
 # Bacteria # ----
 model<-glmer(bacteria~fish*light*OM+(1|mesocosm)+(1|sample_date), offset=log(volume_bacteria),family=poisson,data=cyto_count)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$sample_date)); qqline(unlist(ranef$sample_date))
+# statistical test and effect sizes
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$bacteria=get_stat_table(stat)
+model<-lm(data=cyto_count, bacteria~fish) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$bacteria=get_stat_table(stat,smry)
 
 # Tukey test
 model<-glmer(bacteria~fish+(1|mesocosm)+(1|sample_date), offset=log(volume_bacteria),family=poisson,data=cyto_count)
@@ -511,18 +622,26 @@ label<-ggplot(data=label)+
 
 graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
   draw_plot(p1, 0, 0, 1, 1)+
-  draw_plot(label,0.75,0.03,0.25,0.2,hjust=0)
+  draw_plot(label,0.73,0.03,0.27,0.2,hjust=0)
 
 graph_list$bacteria=graph
 
 # Heterotrophic protists # ----
 model<-glmer(hetero~fish*light*OM+(1|mesocosm)+(1|sample_date), offset=log(volume_hetero),family=poisson,data=cyto_count)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$sample_date)); qqline(unlist(ranef$sample_date))
+# statistical test and effect sizes
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$hetero=get_stat_table(stat)
+model<-lm(data=cyto_count, hetero~fish+light:OM) # new simple model for effect sizes
+smry<-summary(model)
+smry$coefficients<-smry$coefficients[-c(3,4),]
+row.names(smry$coefficients)[3]="lightLight +:OMOM +"
+stat_list$hetero=get_stat_table(stat,smry)
 
 # Tukey test
 model<-glmer(hetero~fish+(1|mesocosm)+(1|sample_date), offset=log(volume_hetero),family=poisson,data=cyto_count)
@@ -552,14 +671,14 @@ p1<-ggplot(data=databis)+
   ylim(15,100)
 
 # displays significant effects on the graph
-label<-data.frame(label="fish *",x=1,y=1)
+label<-data.frame(label="fish *\nlight:OM *",x=1,y=1)
 label<-ggplot(data=label)+
   geom_label(aes(x=x,y=y,label=label),hjust=0,size=6)+
   theme_void()
 
 graph<-ggdraw(xlim = c(0, 1), ylim = c(0, 1)) +
   draw_plot(p1, 0, 0, 1, 1)+
-  draw_plot(label,0.75,0.78,0.25,0.2,hjust=0)
+  draw_plot(label,0.57,0.73,0.4,0.2,hjust=0)
 
 graph_list$hetero=graph
 
@@ -567,14 +686,26 @@ graph_list$hetero=graph
 # continiuous time
 model<-lmer(log(DOC)~time*fish*light*OM+(1|mesocosm), na.action = "na.fail",REML=FALSE,data=DOC)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+# statistical test and effect sizes
 summary(model) # to get the quantitative effect of significant treatments
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat<-get_stat_table(stat)
-stat<-stat[,colnames(stat)%in%c("time:fish","time:light","time:OM","time:fish:light","time:fish:OM","time:light:OM","time:fish:light:OM")]
-colnames(stat)<-c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM")
-stat_list$DOC=stat
+stat<-stat[row.names(stat)%in%c("time:fish","time:light","time:OM","time:fish:light","time:fish:OM","time:light:OM","time:fish:light:OM"),]
+row.names(stat)<-c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM")
+model<-lm(data=DOC, DOC~time*fish*light*OM) # new simple model for effect sizes
+smry<-summary(model)
+smry$coefficients<-smry$coefficients[row.names(smry$coefficients)%in%c("(Intercept)",
+                                                                       "time:fishFish +","time:lightLight +","time:OMOM +",
+                                                                       "time:fishFish +:lightLight +","time:fishFish +:OMOM +","time:lightLight +:OMOM +",
+                                                                       "time:fishFish +:lightLight +:OMOM +"),]
+row.names(smry$coefficients)<-c("(Intercept)",
+                                "fishFish +","lightLight +","OMOM +",
+                                "fishFish +:lightLight +","fishFish +:OMOM +","lightLight +:OMOM +",
+                                "fishFish +:lightLight +:OMOM +")
+stat_list$DOC=get_stat_table(stat,smry)
 
 # discrete time
 model<-lmer(data=DOC, log(DOC)~fish*light*OM+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
@@ -682,9 +813,18 @@ colours<-brewer.pal(length(names),"Paired")
 model<-lm(data=data[data$family_1=="Chlorophyceae",],log(concentration)~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_chlorophyceae_bv=get_stat_table(stat)
+databis<-data[data$family_1=="Chlorophyceae",]
+databis$fish<-relevel(databis$fish,ref=2) # sets F- ; L- as the reference treatment
+databis$light<-relevel(databis$light,ref=2)
+model<-lm(data=databis,concentration~fish:light) # new simple model for effect sizes
+smry<-summary(model)
+smry$coefficients<-smry$coefficients[-c(2,4,5),]
+row.names(smry$coefficients)[2]="fishFish +:lightLight +"
+stat_list$phyto_chlorophyceae_bv=get_stat_table(stat,smry)
 
 p1<-ggplot(data=data[data$family_1=="Chlorophyceae",])+
   geom_boxplot(aes(light,concentration,fill=OM))+
@@ -714,9 +854,13 @@ graph_list$phyto_chlorophyceae_bv=graph
 model<-lm(data=data[data$family_1=="Dinophyceae",],log(concentration)~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_dinophyceae_bv=get_stat_table(stat)
+model<-lm(data=data[data$family_1=="Dinophyceae",], concentration~fish) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$phyto_dinophyceae_bv=get_stat_table(stat,smry)
 
 # Tukey test
 model<-lm(data=data[data$family_1=="Dinophyceae",],log(concentration)~fish)
@@ -761,9 +905,13 @@ graph_list$phyto_dinophyceae_bv=graph
 model<-lm(data=data[data$family_1=="Zygnematophyceae",],log(concentration)~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_zygnematophyceae_bv=get_stat_table(stat)
+model<-lm(data=data[data$family_1=="Zygnematophyceae",], concentration~fish*light) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$phyto_zygnematophyceae_bv=get_stat_table(stat,smry)
 
 # Tukey test
 model<-lm(data=data[data$family_1=="Zygnematophyceae",],log(concentration)~fish*light)
@@ -813,10 +961,11 @@ ggsave(paste(path_figures,"supp_phytoplankton_family_bv.pdf",sep=""),graph, widt
 
 # PERMANOVA zooplankton # ----
 data<-zoo[,c(3:18)]
-stat<-adonis2(data ~ fish*light*OM, data=zoo, permutations = 1000, method="bray", strata=zoo$date)
+set.seed(123)
+stat<-adonis2(data ~ fish*light*OM, data=zoo, permutations = 1000, method="bray", strata=zoo$date, by = "terms")
 stat<-stat[1:7,c("F","Df","Pr(>F)")]
 names(stat)<-c("F value","Df","Pr(>F)")
-stat_list$permanova_zoo=get_stat_table(stat)
+stat_list$permanova_zoo=get_stat_table(stat,NULL)
 
 data_rel<-decostand(data, method = "total") # convert into relative abundances
 data_dist<-as.matrix(vegdist(data_rel, method = "bray")) # distance matrix
@@ -846,7 +995,7 @@ zoo$treatment<-as.factor(zoo$treatment)
 data<-zoo[,c(3:11,13:14)]
 data<-zoo[,c("cladocerae","copepode","chaoborus","rotifer")]
 names(data)[1]<-"small\ncladoceran"
-names(data)[2]<-"copepode"
+names(data)[2]<-"copepod"
 data_pca<-PCA(data, scale.unit = TRUE, ncp = 5, graph = TRUE)
 data_pca$eig
 
@@ -935,9 +1084,16 @@ data$ratio<-data$BBE/data$concentration
 model<-lm(data=data,ratio~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$chloro_seston=get_stat_table(stat)
+smry<-NULL
+stat_list$chloro_seston=get_stat_table(stat,smry)
+
+# simple size effects
+size_effect_list$chloro_seston<-get_size_effect_table(summary(model))
+#size_effect_list$chloro_seston$prediction=c("","\\textcolor{red}{\\textbf{-}}","")
 
 p1<-ggplot(data=data)+
   geom_boxplot(aes(light,ratio,fill=OM))+
@@ -956,9 +1112,13 @@ data<-aggregate(data=phyto_bv[phyto_bv$mixotrophic=="yes",], concentration~mesoc
 model<-lm(data=data,concentration~fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$mixo=get_stat_table(stat)
+model<-lm(data=phyto_bv[phyto_bv$mixotrophic=="yes",], concentration~fish) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$mixo=get_stat_table(stat,smry)
 
 # Tukey test
 model<-lm(data=data,log(concentration)~fish)
@@ -1005,10 +1165,13 @@ data<-merge(data,CNP[,c("mesocosm","C.N","C.P")],by="mesocosm")
 model<-lm(data=data,C.N~BBE*fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statisticf="F")
-stat<-get_stat_table(stat[-nrow(stat),c("F value","Df","Pr(>F)")])
-stat<-stat[,colnames(stat)%in%c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM")]
-stat_list$CN_chloro=stat
+stat<-stat[c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM"),c("F value","Df","Pr(>F)")]
+model<-lm(data=data, C.N~light) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$CN_chloro=get_stat_table(stat,smry)
 
 p1<-ggplot(data=data,aes(BBE,C.N,colour=light,fill=light))+
   geom_smooth(method="lm")+
@@ -1040,10 +1203,13 @@ graph_list$CN_chloro=graph
 model<-lm(data=data,C.P~BBE*fish*light*OM)
 par(mfrow=c(2,2))
 plot(model)
+# statistical test and effect sizes
+summary(model)
 stat<-Anova(model,type=2,test.statisticf="F")
-stat<-get_stat_table(stat[-nrow(stat),c("F value","Df","Pr(>F)")])
-stat<-stat[,colnames(stat)%in%c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM")]
-stat_list$CP_chloro=stat
+stat<-stat[c("fish","light","OM","fish:light","fish:OM","light:OM","fish:light:OM"),c("F value","Df","Pr(>F)")]
+model<-lm(data=data, C.P~fish) # new simple model for effect sizes
+smry<-summary(model)
+stat_list$CP_chloro=get_stat_table(stat,smry)
 
 p1<-ggplot(data=data,aes(BBE,C.P,colour=fish,fill=fish))+
   geom_smooth(method="lm")+
@@ -1084,7 +1250,7 @@ ggsave(paste(path_figures,"figure_physio.pdf",sep=""), graph, width = 14, height
 
 ### Export stat table # ----
 stat_table<-NULL
-names_data<-c("Chlorophyll","Zooplankton","Fish growth","Heterotrophic protists","Heterotrophic procaryotes","Sediments","DOC", # Figure 2
+names_data<-c("Chlorophyll","Zooplankton","Fish growth","Heterotrophic\\\\protists","Heterotrophic\\\\procaryotes","Sediments","DOC", # Figure 2
               "Chlorophyceae","Zygnematophyceae","Dinophyceae","Diversity zoo", # Figure 3
               "Chloro:seston","Mixotrophs","C:N-chloro","C:P-chloro") # Figure 4
 sub_stat_list<-stat_list[c("chloro","zoo","fish","hetero","bacteria","sediment","DOC", # Figure 2
@@ -1093,7 +1259,8 @@ sub_stat_list<-stat_list[c("chloro","zoo","fish","hetero","bacteria","sediment",
 for(i in 1:length(sub_stat_list)){
   data<-as.data.frame(sub_stat_list[[i]])
   data<-rownames_to_column(data,"row_names")
-  data<-cbind(Variable=c("",names_data[i],""),data)
+  data<-cbind(Variable=c(paste0("\\multirow{3}*{\\shortstack[l]{",names_data[i],"}}"),
+                         "",""),data)
   stat_table<-bind_rows(stat_table,data)
 }
 stat_table$row_names[stat_table$row_names=="Pr(>Chisq)" | stat_table$row_names=="Pr(>F)"]="p-value"
@@ -1107,7 +1274,7 @@ sink(paste0(path_figures,"table_stat.txt"))
 # header of the table
 cat("\\begin{tabular}{llccccccc}",sep="\n")
 cat("\\toprule",sep="\n")
-cat("\\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM \\\\",sep="\n")
+cat("\\multicolumn{1}{c}{Variable} & & Fish (F) & Light (L) & OM & F$\\times$L & F$\\times$OM & L$\\times$OM & F$\\times$L$\\times$OM \\\\",sep="\n")
 cat("\\cmidrule(r){1-1} \\cmidrule(l){2-9}",sep="\n")
 # variables presented in Figure 2
 start=0
@@ -1155,6 +1322,104 @@ sink()
 stat_table$' '[stat_table$' '=="$\\chi^2$"]="Chisq"
 write.table(stat_table,paste0(path_figures,"table_stat.csv"),row.names=FALSE)
 
+# ### Export effect size table # ----
+# effect_size_table<-NULL
+# names_data<-c("Chlorophyll","Zooplankton","Fish growth","Hetero. protists","Hetero. procaryotes","Sediments","DOC", # Figure 2
+#               "Chlorophyceae","Zygnematophyceae","Dinophyceae", # Figure 3
+#               "Chloro:seston","Mixotrophs","C:N-chloro","C:P-chloro") # Figure 4
+# sub_effect_size_list<-size_effect_list[c("chloro","zoo","fish","hetero","bacteria","sediment","DOC", # Figure 2
+#                            "phyto_chlorophyceae_bv","phyto_zygnematophyceae_bv","phyto_dinophyceae_bv", # Figure 3
+#                            "chloro_seston","mixo","CN_chloro","CP_chloro")] # Figure 4
+# for(i in 1:length(sub_effect_size_list)){
+#   data<-sub_effect_size_list[[i]]
+#   data$Variable<-names_data[i]
+#   effect_size_table<-rbind(effect_size_table,data)
+# }
+# effect_size_table$treatment<-factor(effect_size_table$treatment,levels=c("fishFish +","lightLight +","OMOM +","fishFish +:lightLight +","fishFish +:OMOM +","lightLight +:OMOM +","fishFish +:lightLight +:OMOM +"))
+# levels(effect_size_table$treatment)<-c("Fish (F)","Light (L)","OM","F:L","F:OM","L:OM","F:L:OM")
+# 
+# tab_1<-dcast(effect_size_table, Variable~treatment, value.var ="effect_size")
+# tab_1<-arrange(tab_1,factor(Variable, levels = names_data))
+# 
+# # export as a LaTeX table
+# sink(paste0(path_figures,"table_effect_size.txt"))
+# # header of the table
+# cat("\\begin{tabular}{lccccccc}",sep="\n")
+# cat("\\toprule",sep="\n")
+# cat("\\multicolumn{1}{c}{Variable} & Fish (F) & Light (L) & OM & F:L & F:OM & L:OM & F:L:OM \\\\",sep="\n")
+# cat("\\cmidrule(r){1-1} \\cmidrule(rl){2-8}",sep="\n")
+# # variables presented in Figure 2
+# for(i in 1:7){
+#   line<-paste(c(tab_1[i,]),collapse=" & ")
+#   cat(paste(line,"\\\\"),sep="\n")
+# }
+# cat("\\cmidrule(r){1-1} \\cmidrule(rl){2-8}",sep="\n")
+# # variables presented in Figure 3
+# for(i in 8:10){
+#   line<-paste(c(tab_1[i,]),collapse=" & ")
+#   cat(paste(line,"\\\\"),sep="\n")
+# }
+# cat("\\cmidrule(r){1-1} \\cmidrule(rl){2-8}",sep="\n")
+# # variables presented in Figure 4
+# for(i in 11:14){
+#   line<-paste(c(tab_1[i,]),collapse=" & ")
+#   cat(paste(line,"\\\\"),sep="\n")
+# }
+# cat("\\bottomrule",sep="\n")
+# cat("\\end{tabular}")
+# sink()
+# 
+# ### Export effect size table old # ----
+# effect_size_table<-NULL
+# names_data<-c("Chlorophyll","Zooplankton","Fish growth","Hetero. protists","Hetero. procaryotes","Sediments","DOC", # Figure 2
+#               "Chlorophyceae","Zygnematophyceae","Dinophyceae", # Figure 3
+#               "Chloro:seston","Mixotrophs","C:N-chloro","C:P-chloro") # Figure 4
+# sub_effect_size_list<-size_effect_list[c("chloro","zoo","fish","hetero","bacteria","sediment","DOC", # Figure 2
+#                                          "phyto_chlorophyceae_bv","phyto_zygnematophyceae_bv","phyto_dinophyceae_bv", # Figure 3
+#                                          "chloro_seston","mixo","CN_chloro","CP_chloro")] # Figure 4
+# for(i in 1:length(sub_effect_size_list)){
+#   data<-sub_effect_size_list[[i]]
+#   data$Variable<-names_data[i]
+#   effect_size_table<-rbind(effect_size_table,data)
+# }
+# effect_size_table$treatment<-as.factor(effect_size_table$treatment)
+# levels(effect_size_table$treatment)<-c("Fish (F)","Light (L)","OM")
+# 
+# tab_1<-dcast(effect_size_table, Variable~treatment, value.var ="effect_size")
+# tab_1<-arrange(tab_1,factor(Variable, levels = names_data))
+# tab_2<-dcast(effect_size_table, Variable~treatment, value.var ="prediction")
+# tab_2<-arrange(tab_2,factor(Variable, levels = names_data))
+# 
+# # export as a LaTeX table
+# sink(paste0(path_figures,"table_effect_size.txt"))
+# # header of the table
+# cat("\\begin{tabular}{lcccccc}",sep="\n")
+# cat("\\toprule",sep="\n")
+# cat(" & \\multicolumn{3}{c}{Simple effect size} & \\multicolumn{3}{c}{Hypothetical direction} \\\\",sep="\n")
+# cat("\\cmidrule(r){1-1} \\cmidrule(rl){2-4} \\cmidrule(l){5-7}",sep="\n")
+# cat("\\multicolumn{1}{c}{Variable} & Fish (F) & Light (L) & OM & Fish (F) & Light (L) & OM \\\\",sep="\n")
+# cat("\\cmidrule(r){1-1} \\cmidrule(rl){2-4} \\cmidrule(l){5-7}",sep="\n")
+# # variables presented in Figure 2
+# for(i in 1:7){
+#   line<-paste(c(tab_1[i,],tab_2[i,-1]),collapse=" & ")
+#   cat(paste(line,"\\\\"),sep="\n")
+# }
+# cat("\\cmidrule(r){1-1} \\cmidrule(rl){2-4} \\cmidrule(l){5-7}",sep="\n")
+# # variables presented in Figure 3
+# for(i in 8:10){
+#   line<-paste(c(tab_1[i,],tab_2[i,-1]),collapse=" & ")
+#   cat(paste(line,"\\\\"),sep="\n")
+# }
+# cat("\\cmidrule(r){1-1} \\cmidrule(rl){2-4} \\cmidrule(l){5-7}",sep="\n")
+# # variables presented in Figure 4
+# for(i in 11:14){
+#   line<-paste(c(tab_1[i,],tab_2[i,-1]),collapse=" & ")
+#   cat(paste(line,"\\\\"),sep="\n")
+# }
+# cat("\\bottomrule",sep="\n")
+# cat("\\end{tabular}")
+# sink()
+
 ########################## ----
 # SUPPORTING INFORMATION # ----
 ########################## ----
@@ -1165,8 +1430,12 @@ data<-BBE[BBE$taxon_BBE=="cyano",]
 
 model<-lmer(data=data, log(BBE+0.001)~fish*light*OM+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$BBE_cyano=get_stat_table(stat)
@@ -1213,8 +1482,12 @@ data<-BBE[BBE$taxon_BBE=="diatoms",]
 
 model<-lmer(data=data, log(BBE+0.001)~fish*light*OM+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$BBE_diatoms=get_stat_table(stat)
@@ -1268,8 +1541,12 @@ ggsave(paste(path_figures,"supp_BBE.pdf",sep=""), graph, width = 14, height = 6,
 # Chlorophyll # ----
 model<-lmer(log(chlorophyll)~fish*light*OM+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$chloro_multipar=get_stat_table(stat)
@@ -1364,8 +1641,11 @@ ggsave(paste(path_figures,"supp_chloro.pdf",sep=""), graph, width = 14, height =
 # Temperature # ----
 model<-lmer(temperature~fish*light*OM+depth+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$temperature=get_stat_table(stat)
@@ -1401,8 +1681,12 @@ graph_list$temperature=graph
 # Oxygen # ----
 model<-lmer(oxygen~fish*light*OM+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$oxygen=get_stat_table(stat)
@@ -1446,8 +1730,12 @@ graph_list$oxygen=graph
 # pH -------------
 model<-lmer(pH~fish*light*OM+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$pH=get_stat_table(stat)
@@ -1492,8 +1780,12 @@ graph_list$pH=graph
 data<-multi[multi$turbidity<20,]
 model<-lmer(log(turbidity)~fish*light*OM+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=data)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$turbidity=get_stat_table(stat)
@@ -1724,8 +2016,12 @@ ggsave(paste(path_figures,"supp_seston_CN_CP.pdf",sep=""), graph, width = 16, he
 # Pico phytoplankton # ----
 model<-glmer(pico~fish*light*OM+(1|mesocosm)+(1|sample_date), offset=log(volume_phyto),family=poisson,data=cyto_count)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$sample_date)); qqline(unlist(ranef$sample_date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$pico=get_stat_table(stat)
@@ -1748,8 +2044,12 @@ graph_list$pico=p1
 # Nano phytoplankton # ----
 model<-glmer(nano~fish*light*OM+(1|mesocosm)+(1|sample_date), offset=log(volume_phyto),family=poisson,data=cyto_count)
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef$mesocosm)); qqline(unlist(ranef$mesocosm))
+qqnorm(unlist(ranef$sample_date)); qqline(unlist(ranef$sample_date))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
 stat_list$nano=get_stat_table(stat)
@@ -2146,8 +2446,11 @@ sink()
 # global
 model<-glmmPQL(data=zoo, copepode~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
 stat_list$copepoda=get_stat_table(stat)
@@ -2183,8 +2486,11 @@ graph_list$copepoda=p1
 # global
 model<-glmmPQL(data=zoo, cladocerae~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2230,8 +2536,11 @@ graph_list$chaoborus=p1
 # global
 model<-glmmPQL(data=zoo, rotifer~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2304,8 +2613,11 @@ model<-glmer(data=zoo, cyclopide~fish*light*OM+date+(1|mesocosm), family = poiss
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, cyclopide~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2342,8 +2654,11 @@ model<-glmer(data=zoo, nauplius~fish*light*OM+date+(1|mesocosm), family = poisso
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, nauplius~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2380,8 +2695,11 @@ model<-glmer(data=zoo, chydoridae~fish*light*OM+date+(1|mesocosm), family = pois
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, chydoridae~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2418,8 +2736,11 @@ model<-glmer(data=zoo, lecane~fish*light*OM+date+(1|mesocosm), family = poisson)
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, lecane~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2456,8 +2777,11 @@ model<-glmer(data=zoo, lepadella~fish*light*OM+date+(1|mesocosm), family = poiss
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, lepadella~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2494,8 +2818,11 @@ model<-glmer(data=zoo, bdelloide~fish*light*OM+date+(1|mesocosm), family = poiss
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, bdelloide~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2532,8 +2859,11 @@ model<-glmer(data=zoo, polyarthra~fish*light*OM+date+(1|mesocosm), family = pois
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, polyarthra~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
@@ -2570,8 +2900,11 @@ model<-glmer(data=zoo, keratella~fish*light*OM+date+(1|mesocosm), family = poiss
 dispersion_glmer(model)
 model<-glmmPQL(data=zoo, keratella~fish*light*OM+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 plot(model)
-qqnorm(resid(model))
-qqline(resid(model))
+qqnorm(resid(model)); qqline(resid(model))
+# normality of mixed effects
+ranef<-ranef(model)
+qqnorm(unlist(ranef)); qqline(unlist(ranef))
+# test
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
