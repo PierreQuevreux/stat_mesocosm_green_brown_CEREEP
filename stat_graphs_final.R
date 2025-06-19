@@ -98,6 +98,7 @@ y_axis_log10<-scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
 
 ### labels ###
 label_algae<-expression("Biovolume ("*mm^3*" "*L^{-1}*")")
+label_algae_count<-expression("Cell concentration (cell mL"^{-1}*")")
 label_chloro<-expression("Chlorophyll "*italic(a)*" (\u03BCg L"^{-1}*")")
 label_zoo<-"Individuals per 24 L"
 label_OD<-"Optical density (OD)"
@@ -169,6 +170,21 @@ get_stat_table<-function(stat,smry){
     stat_out["Df",]="-"
   }else{stat_out["Df",]=smry$effect_size}
   row.names(stat_out)[3]<-"ES"
+  return(stat_out)
+}
+
+get_stat_table_supp<-function(stat){
+  stat_out<-stat
+  for(i in 1:ncol(stat_out)){
+    stat_out[,i]<-as.character(stat_out[,i])
+  }
+  for(i in c(1,3)){
+    stat_out[stat[,i]>=10,i]<-round(stat[stat[,i]>=10,i],2)
+    stat_out[stat[,i]<10,i]<-round(stat[stat[,i]<10,i],3)
+  }
+  stat_out[stat_out[,3]=="0",3]<-"<.001"
+  stat_out<-t(stat_out)
+  stat_out<-stat_out[c(3,1,2),]
   return(stat_out)
 }
 
@@ -714,7 +730,7 @@ qqnorm(resid(model))
 qqline(resid(model))
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-#stat_list<-c(stat_list,list(chloro=get_stat_table(stat)))
+#stat_list<-c(stat_list,list(chloro=get_stat_table_supp(stat)))
 
 # figure
 p1<-ggplot(DOC[DOC$DOC<25,])+ # remove the 5 aberrant extra points
@@ -1438,7 +1454,7 @@ qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$BBE_cyano=get_stat_table(stat)
+stat_list$BBE_cyano=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lmer(data=data, log(BBE+0.001)~fish+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
@@ -1490,7 +1506,7 @@ qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$BBE_diatoms=get_stat_table(stat)
+stat_list$BBE_diatoms=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lmer(data=data, log(BBE+0.001)~fish+light+(1|mesocosm)+(1|date), na.action = "na.fail", REML=FALSE)
@@ -1549,7 +1565,7 @@ qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$chloro_multipar=get_stat_table(stat)
+stat_list$chloro_multipar=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lmer(log(chlorophyll)~fish*light+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
@@ -1648,7 +1664,7 @@ qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$temperature=get_stat_table(stat)
+stat_list$temperature=get_stat_table_supp(stat)
 
 # figure
 data<-summarySE(data=multi[multi$temperature>10,],measurevar="temperature",groupvars=c("depth","date"))
@@ -1689,7 +1705,7 @@ qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$oxygen=get_stat_table(stat)
+stat_list$oxygen=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lmer(oxygen~fish+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
@@ -1738,7 +1754,7 @@ qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$pH=get_stat_table(stat)
+stat_list$pH=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lmer(pH~fish+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
@@ -1788,7 +1804,7 @@ qqnorm(unlist(ranef$date)); qqline(unlist(ranef$date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$turbidity=get_stat_table(stat)
+stat_list$turbidity=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lmer(log(turbidity)~fish*light+depth+(1|mesocosm)+(1|date), na.action = "na.omit", REML=FALSE, data=multi)
@@ -1908,7 +1924,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statisticf="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$seston=get_stat_table(stat)
+stat_list$seston=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lm(data=seston,log(concentration)~fish*light)
@@ -1947,7 +1963,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$CN=get_stat_table(stat)
+stat_list$CN=get_stat_table_supp(stat)
 
 p1<-ggplot(data=CNP)+
   geom_boxplot(aes(light,C.N,fill=OM))+
@@ -1966,7 +1982,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$CP=get_stat_table(stat)
+stat_list$CP=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lm(data=CNP, C.P~fish)
@@ -2024,7 +2040,7 @@ qqnorm(unlist(ranef$sample_date)); qqline(unlist(ranef$sample_date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$pico=get_stat_table(stat)
+stat_list$pico=get_stat_table_supp(stat)
 
 # figure
 data<-cyto[cyto$taxon_cyto=="picophytoplankton",]
@@ -2052,7 +2068,7 @@ qqnorm(unlist(ranef$sample_date)); qqline(unlist(ranef$sample_date))
 # test
 summary(model)
 stat<-Anova(model,type=2,test.statistic="Chisq")
-stat_list$nano=get_stat_table(stat)
+stat_list$nano=get_stat_table_supp(stat)
 
 # Tukey test
 model<-glmer(nano~fish*light+(1|mesocosm)+(1|sample_date), offset=log(volume_phyto),family=poisson,data=cyto_count)
@@ -2116,7 +2132,7 @@ p1<-ggplot(data=databis)+
               axis.title.x=element_text())+
   coord_flip()+
   xlab("")+
-  ylab(label_algae)
+  ylab(label_algae_count)
 
 graph_list$phyto_taxa=p1
 
@@ -2130,7 +2146,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_chlorophyceae=get_stat_table(stat)
+stat_list$phyto_chlorophyceae=get_stat_table_supp(stat)
 
 p1<-ggplot(data=data[data$family_1=="Chlorophyceae",])+
   geom_boxplot(aes(light,concentration,fill=OM))+
@@ -2139,7 +2155,7 @@ p1<-ggplot(data=data[data$family_1=="Chlorophyceae",])+
   theme+theme(legend.position="none",
               plot.title=element_text(colour=colours[names=="Chlorophyceae"]))+
   y_axis_log10+
-  ylab(label_algae)+
+  ylab(label_algae_count)+
   ggtitle("Chlorophyceae")
 
 graph_list$phyto_chlorophyceae=p1
@@ -2150,7 +2166,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_cyanobacteria=get_stat_table(stat)
+stat_list$phyto_cyanobacteria=get_stat_table_supp(stat)
 
 p1<-ggplot(data=data[data$family_1=="Cyanobacteria",])+
   geom_boxplot(aes(light,concentration,fill=OM))+
@@ -2159,7 +2175,7 @@ p1<-ggplot(data=data[data$family_1=="Cyanobacteria",])+
   theme+theme(legend.position="none",
               plot.title=element_text(colour=colours[names=="Cyanobacteria"]))+
   y_axis_log10+
-  ylab(label_algae)+
+  ylab(label_algae_count)+
   ggtitle("Cyanobacteria")
 
 graph_list$phyto_cyanobacteria=p1
@@ -2170,7 +2186,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_dinophyceae=get_stat_table(stat)
+stat_list$phyto_dinophyceae=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lm(data=data[data$family_1=="Dinophyceae",],log(concentration)~fish)
@@ -2194,7 +2210,7 @@ p1<-ggplot(data=data[data$family_1=="Dinophyceae",])+
   theme+theme(legend.position="none",
               plot.title=element_text(colour=colours[names=="Dinophyceae"]))+
   y_axis_log10_short+
-  ylab(label_algae)+
+  ylab(label_algae_count)+
   ggtitle("Dinophyceae")
 
 # displays significant effects on the graph
@@ -2215,7 +2231,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_trebouxiophyceae=get_stat_table(stat)
+stat_list$phyto_trebouxiophyceae=get_stat_table_supp(stat)
 
 p1<-ggplot(data=data[data$family_1=="Trebouxiophyceae",])+
   geom_boxplot(aes(light,concentration,fill=OM))+
@@ -2224,7 +2240,7 @@ p1<-ggplot(data=data[data$family_1=="Trebouxiophyceae",])+
   theme+theme(legend.position="none",
               plot.title=element_text(colour=colours[names=="Trebouxiophyceae"]))+
   y_axis_log10+
-  ylab(label_algae)+
+  ylab(label_algae_count)+
   ggtitle("Trebouxiophyceae")
 
 graph_list$phyto_trebouxiophyceae=p1
@@ -2235,7 +2251,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_zygnematophyceae=get_stat_table(stat)
+stat_list$phyto_zygnematophyceae=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lm(data=data[data$family_1=="Zygnematophyceae",],log(concentration)~fish*light)
@@ -2253,7 +2269,7 @@ p1<-ggplot(data=data[data$family_1=="Zygnematophyceae",])+
   theme+theme(legend.position="none",
               plot.title=element_text(colour=colours[names=="Zygnematophyceae"]))+
   y_axis_log10+
-  ylab(label_algae)+
+  ylab(label_algae_count)+
   ggtitle("Zygnematophyceae")
 
 # displays significant effects on the graph
@@ -2274,7 +2290,7 @@ par(mfrow=c(2,2))
 plot(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[1:7,c("F value","Df","Pr(>F)")]
-stat_list$phyto_shannon=get_stat_table(stat)
+stat_list$phyto_shannon=get_stat_table_supp(stat)
 
 # Tukey test
 model<-lm(data=diversity,diversity~fish)
@@ -2297,7 +2313,7 @@ p1<-ggplot(data=diversity)+
   colour_OM+
   theme+theme(legend.position="none")+
   ylab("Shannon index")+
-  ggtitle("")
+  ggtitle("Taxonomic diversity")
 
 # displays significant effects on the graph
 label<-data.frame(label="fish *",x=1,y=1)
@@ -2453,7 +2469,7 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 # test
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$copepoda=get_stat_table(stat)
+stat_list$copepoda=get_stat_table_supp(stat)
 model<-glmmPQL(data=zoo, copepode~light+date, random = ~1|mesocosm, family = quasipoisson(link='log'))
 summary(model)
 
@@ -2462,13 +2478,13 @@ model<-glm(data=zoo[zoo$date=="19/08/2015",], copepode~fish*light*OM, family = q
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$copepoda_aug=get_stat_table(stat)
+stat_list$copepoda_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], copepode~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$copepoda_sep=get_stat_table(stat)
+stat_list$copepoda_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2494,20 +2510,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$cladocera=get_stat_table(stat)
+stat_list$cladocera=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], cladocerae~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$cladocera_aug=get_stat_table(stat)
+stat_list$cladocera_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], cladocerae~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$cladocera_sep=get_stat_table(stat)
+stat_list$cladocera_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2544,20 +2560,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$rotifer=get_stat_table(stat)
+stat_list$rotifer=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], rotifer~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$rotifer_aug=get_stat_table(stat)
+stat_list$rotifer_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], rotifer~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$rotifer_sep=get_stat_table(stat)
+stat_list$rotifer_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2621,20 +2637,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$cyclopidae=get_stat_table(stat)
+stat_list$cyclopidae=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], cyclopide~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$cyclopidae_aug=get_stat_table(stat)
+stat_list$cyclopidae_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], cyclopide~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$cyclopidae_sep=get_stat_table(stat)
+stat_list$cyclopidae_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2662,20 +2678,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$nauplii=get_stat_table(stat)
+stat_list$nauplii=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], nauplius~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$nauplii_aug=get_stat_table(stat)
+stat_list$nauplii_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], nauplius~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$nauplii_sep=get_stat_table(stat)
+stat_list$nauplii_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2703,20 +2719,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$chydoridae=get_stat_table(stat)
+stat_list$chydoridae=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], chydoridae~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$chydoridae_aug=get_stat_table(stat)
+stat_list$chydoridae_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], chydoridae~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$chydoridae_sep=get_stat_table(stat)
+stat_list$chydoridae_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2744,20 +2760,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$lecane=get_stat_table(stat)
+stat_list$lecane=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], lecane~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$lecane_aug=get_stat_table(stat)
+stat_list$lecane_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], lecane~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$lecane_sep=get_stat_table(stat)
+stat_list$lecane_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2785,20 +2801,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$lepadella=get_stat_table(stat)
+stat_list$lepadella=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], lepadella~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$lepadella_aug=get_stat_table(stat)
+stat_list$lepadella_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], lecane~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$lepadella_sep=get_stat_table(stat)
+stat_list$lepadella_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2826,20 +2842,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$bdelloide=get_stat_table(stat)
+stat_list$bdelloide=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], bdelloide~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$bdelloide_aug=get_stat_table(stat)
+stat_list$bdelloide_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], bdelloide~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$bdelloide_sep=get_stat_table(stat)
+stat_list$bdelloide_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2867,20 +2883,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$polyarthra=get_stat_table(stat)
+stat_list$polyarthra=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], polyarthra~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$polyarthra_aug=get_stat_table(stat)
+stat_list$polyarthra_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], polyarthra~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$polyarthra_sep=get_stat_table(stat)
+stat_list$polyarthra_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2908,20 +2924,20 @@ qqnorm(unlist(ranef)); qqline(unlist(ranef))
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
 stat<-stat[c(1:3,5:8),]
-stat_list$keratella=get_stat_table(stat)
+stat_list$keratella=get_stat_table_supp(stat)
 
 # per sample date
 model<-glm(data=zoo[zoo$date=="19/08/2015",], keratella~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$keratella_aug=get_stat_table(stat)
+stat_list$keratella_aug=get_stat_table_supp(stat)
 
 model<-glm(data=zoo[zoo$date=="25/09/2015",], keratella~fish*light*OM, family = quasipoisson(link='log'))
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$keratella_sep=get_stat_table(stat)
+stat_list$keratella_sep=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo)+
@@ -2940,7 +2956,7 @@ model<-glm(data=zoo[zoo$date=="25/09/2015",], brachionus~fish*light*OM, family =
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$brachionus=get_stat_table(stat)
+stat_list$brachionus=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo[zoo$date=="25/09/2015",])+
@@ -2959,7 +2975,7 @@ model<-glm(data=zoo[zoo$date=="25/09/2015",], anuraeopsis~fish*light*OM, family 
 plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statisticf="Chisq")
-stat_list$anuraeopsis=get_stat_table(stat)
+stat_list$anuraeopsis=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=zoo[zoo$date=="25/09/2015",])+
@@ -3081,7 +3097,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,6:9),c("F value","Df","Pr(>F)")]
-stat_list$eco_amine_pel=get_stat_table(stat)
+stat_list$eco_amine_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$family=="amines" & eco$compartment=="benthic",],
@@ -3091,7 +3107,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,5:8),c("F value","Df","Pr(>F)")]
-stat_list$eco_amine_ben=get_stat_table(stat)
+stat_list$eco_amine_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$family=="amines",])+
@@ -3113,7 +3129,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,6:9),c("F value","Df","Pr(>F)")]
-stat_list$eco_aminoacid_pel=get_stat_table(stat)
+stat_list$eco_aminoacid_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$family=="amino acids" & eco$compartment=="benthic",],
@@ -3123,7 +3139,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,5:8),c("F value","Df","Pr(>F)")]
-stat_list$eco_aminoacid_ben=get_stat_table(stat)
+stat_list$eco_aminoacid_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$family=="amino acids",])+
@@ -3144,7 +3160,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,6:9),c("F value","Df","Pr(>F)")]
-stat_list$eco_carbohydrate_pel=get_stat_table(stat)
+stat_list$eco_carbohydrate_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$family=="carbohydrate" & eco$compartment=="benthic",],
@@ -3154,7 +3170,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,5:8),c("F value","Df","Pr(>F)")]
-stat_list$eco_carbohydrate_ben=get_stat_table(stat)
+stat_list$eco_carbohydrate_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$family=="carbohydrate",])+
@@ -3176,7 +3192,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,6:9),c("F value","Df","Pr(>F)")]
-stat_list$eco_carboacid_pel=get_stat_table(stat)
+stat_list$eco_carboacid_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$family=="carboxylic acids" & eco$compartment=="benthic",],
@@ -3186,7 +3202,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,5:8),c("F value","Df","Pr(>F)")]
-stat_list$eco_carboacid_ben=get_stat_table(stat)
+stat_list$eco_carboacid_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$family=="carboxylic acids",])+
@@ -3208,7 +3224,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,6:9),c("F value","Df","Pr(>F)")]
-stat_list$eco_phenol_pel=get_stat_table(stat)
+stat_list$eco_phenol_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$family=="phenolic acids" & eco$compartment=="benthic",],
@@ -3218,7 +3234,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,5:8),c("F value","Df","Pr(>F)")]
-stat_list$eco_phenol_ben=get_stat_table(stat)
+stat_list$eco_phenol_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$family=="phenolic acids",])+
@@ -3240,7 +3256,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,6:9),c("F value","Df","Pr(>F)")]
-stat_list$eco_polymer_pel=get_stat_table(stat)
+stat_list$eco_polymer_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$family=="polymer" & eco$compartment=="benthic",],
@@ -3250,7 +3266,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:3,5:8),c("F value","Df","Pr(>F)")]
-stat_list$eco_polymer_ben=get_stat_table(stat)
+stat_list$eco_polymer_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$family=="polymer",])+
@@ -3372,7 +3388,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:7),c("F value","Df","Pr(>F)")]
-stat_list$eco_alphacyclo_pel=get_stat_table(stat)
+stat_list$eco_alphacyclo_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$substrat=="E1" & eco$compartment=="benthic",],
@@ -3382,7 +3398,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:7),c("F value","Df","Pr(>F)")]
-stat_list$eco_alphacyclo_ben=get_stat_table(stat)
+stat_list$eco_alphacyclo_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$substrat=="E1",])+
@@ -3404,7 +3420,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:7),c("F value","Df","Pr(>F)")]
-stat_list$eco_cellobiose_pel=get_stat_table(stat)
+stat_list$eco_cellobiose_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$substrat=="G1" & eco$compartment=="benthic",],
@@ -3414,7 +3430,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:7),c("F value","Df","Pr(>F)")]
-stat_list$eco_cellobiose_ben=get_stat_table(stat)
+stat_list$eco_cellobiose_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$substrat=="G1",])+
@@ -3436,7 +3452,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:7),c("F value","Df","Pr(>F)")]
-stat_list$eco_asparagine_pel=get_stat_table(stat)
+stat_list$eco_asparagine_pel=get_stat_table_supp(stat)
 
 # benthic
 model<-lm(data=eco[eco$substrat=="B4" & eco$compartment=="benthic",],
@@ -3446,7 +3462,7 @@ plot(model)
 summary(model)
 stat<-Anova(model,type=2,test.statistic="F")
 stat<-stat[c(1:7),c("F value","Df","Pr(>F)")]
-stat_list$eco_asparagine_ben=get_stat_table(stat)
+stat_list$eco_asparagine_ben=get_stat_table_supp(stat)
 
 # figure
 p1<-ggplot(data=eco[eco$substrat=="B4",])+
